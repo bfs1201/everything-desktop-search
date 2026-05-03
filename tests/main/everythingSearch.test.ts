@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseEverythingOutput, searchEverything } from "../../src/main/everythingSearch";
+import { decodeEverythingOutput, parseEverythingOutput, searchEverything } from "../../src/main/everythingSearch";
+
+describe("decodeEverythingOutput", () => {
+  it("decodes GB18030 output from Everything CLI", () => {
+    const output = Buffer.from([
+      0x43, 0x3a, 0x5c, 0x55, 0x73, 0x65, 0x72, 0x73, 0x5c, 0x62, 0x66, 0x73, 0x5c,
+      0xd7, 0xc0, 0xc3, 0xe6, 0x5c, 0xb1, 0xcf, 0xd2, 0xb5, 0xc9, 0xe8, 0xbc, 0xc6
+    ]);
+
+    expect(decodeEverythingOutput(output)).toBe("C:\\Users\\bfs\\桌面\\毕业设计");
+  });
+});
 
 describe("parseEverythingOutput", () => {
   it("turns absolute paths into displayable search results", () => {
@@ -48,6 +59,23 @@ describe("searchEverything", () => {
 
     expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", ["-n", "50", "file"]);
     expect(response.results[0]?.path).toBe("D:\\file.txt");
+  });
+
+  it("decodes Chinese paths returned as GB18030 bytes", async () => {
+    const stdout = Buffer.from([
+      0x43, 0x3a, 0x5c, 0x55, 0x73, 0x65, 0x72, 0x73, 0x5c, 0x62, 0x66, 0x73, 0x5c,
+      0xd7, 0xc0, 0xc3, 0xe6, 0x5c, 0xb1, 0xcf, 0xd2, 0xb5, 0xc9, 0xe8, 0xbc, 0xc6,
+      0x2e, 0x70, 0x64, 0x66, 0x0d, 0x0a
+    ]);
+    const execFile = vi.fn().mockResolvedValue({ stdout, stderr: Buffer.alloc(0) });
+    const startEverything = vi.fn();
+
+    const response = await searchEverything("毕业设计", { execFile, startEverything });
+
+    expect(response.results[0]).toMatchObject({
+      name: "毕业设计.pdf",
+      path: "C:\\Users\\bfs\\桌面\\毕业设计.pdf"
+    });
   });
 
   it("starts Everything and retries once when IPC is not found", async () => {

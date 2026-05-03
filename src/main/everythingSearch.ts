@@ -7,7 +7,8 @@ const execFilePromise = promisify(execFileCallback);
 const ES_PATH = "D:\\Everything\\es.exe";
 const EVERYTHING_PATH = "D:\\Everything\\Everything.exe";
 
-type ExecFile = (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
+type ProcessOutput = string | Buffer;
+type ExecFile = (file: string, args: string[]) => Promise<{ stdout: ProcessOutput; stderr: ProcessOutput }>;
 type StartEverything = () => Promise<void>;
 
 interface SearchDeps {
@@ -28,8 +29,17 @@ export function parseEverythingOutput(output: string): SearchResult[] {
     }));
 }
 
+export function decodeEverythingOutput(output: ProcessOutput): string {
+  if (typeof output === "string") {
+    return output;
+  }
+
+  return new TextDecoder("gb18030").decode(output);
+}
+
 async function defaultExecFile(file: string, args: string[]) {
   const { stdout, stderr } = await execFilePromise(file, args, {
+    encoding: "buffer",
     windowsHide: true,
     maxBuffer: 1024 * 1024
   });
@@ -66,13 +76,13 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
 
   try {
     const { stdout } = await execFile(ES_PATH, args);
-    return { results: parseEverythingOutput(stdout) };
+    return { results: parseEverythingOutput(decodeEverythingOutput(stdout)) };
   } catch (firstError) {
     if (isEverythingIpcError(firstError)) {
       try {
         await startEverything();
         const { stdout } = await execFile(ES_PATH, args);
-        return { results: parseEverythingOutput(stdout) };
+        return { results: parseEverythingOutput(decodeEverythingOutput(stdout)) };
       } catch (retryError) {
         return { results: [], error: `Everything 搜索失败：${messageFromError(retryError)}` };
       }
