@@ -1,46 +1,46 @@
-# Everything Quick Launcher Implementation Plan
+# Everything 快速启动器实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **给 agentic workers：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务执行。本计划使用 checkbox（`- [ ]`）追踪进度。
 
-**Goal:** Build a Windows desktop quick launcher that toggles a centered search box with double Ctrl, searches through Everything CLI, and supports keyboard-first file actions.
+**目标：** 开发一款 Windows 桌面快速搜索应用，通过双击 Ctrl 呼出居中搜索框，直接调用 Everything CLI 搜索，并支持键盘优先的文件操作。
 
-**Architecture:** Use Electron for the desktop shell, global keyboard listening, process execution, clipboard, and file actions. Use React + TypeScript for the renderer UI. Keep the Everything CLI integration, hotkey state machine, and file actions in small testable modules, then wire them through Electron IPC.
+**架构：** 使用 Electron 负责桌面窗口、全局快捷键、进程调用、剪贴板和文件动作。使用 React + TypeScript 构建渲染进程 UI。将 Everything 搜索适配器、双击 Ctrl 检测、文件动作和 IPC 分成小模块，便于测试和维护。
 
-**Tech Stack:** Electron, Vite, React, TypeScript, Vitest, Testing Library, `electron-builder`.
+**技术栈：** Electron、Vite、React、TypeScript、Vitest、Testing Library、`electron-builder`。
 
 ---
 
-## File Structure
+## 文件结构
 
-- Create `package.json`: scripts, dependencies, build config.
-- Create `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `vitest.config.ts`: TypeScript, Vite, and test setup.
-- Create `index.html`: renderer mount point.
-- Create `src/shared/searchTypes.ts`: shared `SearchResult` and IPC payload types.
-- Create `src/main/everythingSearch.ts`: calls `D:\Everything\es.exe`, parses output, retries after starting Everything on IPC errors.
-- Create `src/main/hotkeyDetector.ts`: detects double Ctrl and exposes a pure testable state machine.
-- Create `src/main/fileActions.ts`: opens files, reveals files, and copies paths.
-- Create `src/main/ipc.ts`: renderer-to-main IPC handlers.
-- Create `src/main/main.ts`: Electron app bootstrap and window lifecycle.
-- Create `src/preload.ts`: safe renderer bridge.
-- Create `src/renderer/App.tsx`: search UI and keyboard behavior.
-- Create `src/renderer/main.tsx`: React bootstrap.
-- Create `src/renderer/styles.css`: floating single-box styling.
-- Create tests under `tests/main` and `tests/renderer`.
+- `package.json`：项目脚本、依赖和打包配置。
+- `tsconfig.json`、`tsconfig.node.json`、`vite.config.ts`、`vitest.config.ts`：TypeScript、Vite 和测试配置。
+- `index.html`：渲染进程挂载入口。
+- `src/shared/searchTypes.ts`：主进程和渲染进程共享的搜索类型。
+- `src/main/everythingSearch.ts`：调用 `D:\Everything\es.exe`，解析输出，处理 Everything 未运行时的重试。
+- `src/main/hotkeyDetector.ts`：纯函数式双击 Ctrl 检测状态机。
+- `src/main/fileActions.ts`：打开文件、打开所在位置、复制路径。
+- `src/main/ipc.ts`：注册渲染进程到主进程的 IPC 调用。
+- `src/main/main.ts`：Electron 应用启动、窗口生命周期和快捷键注册。
+- `src/preload.ts`：安全暴露给渲染进程的 API。
+- `src/renderer/App.tsx`：搜索框 UI 和键盘交互。
+- `src/renderer/main.tsx`：React 启动入口。
+- `src/renderer/styles.css`：浮动单框样式。
+- `tests/main/*`、`tests/renderer/*`：主进程和渲染进程测试。
 
-## Task 1: Scaffold Desktop Project
+## 任务 1：搭建桌面项目骨架
 
-**Files:**
-- Create: `package.json`
-- Create: `tsconfig.json`
-- Create: `tsconfig.node.json`
-- Create: `vite.config.ts`
-- Create: `vitest.config.ts`
-- Create: `index.html`
-- Create: `src/shared/searchTypes.ts`
+**文件：**
+- 新建：`package.json`
+- 新建：`tsconfig.json`
+- 新建：`tsconfig.node.json`
+- 新建：`vite.config.ts`
+- 新建：`vitest.config.ts`
+- 新建：`index.html`
+- 新建：`src/shared/searchTypes.ts`
 
-- [ ] **Step 1: Write package and TypeScript configuration**
+- [ ] **步骤 1：写入项目配置**
 
-Create `package.json`:
+创建 `package.json`：
 
 ```json
 {
@@ -90,7 +90,7 @@ Create `package.json`:
 }
 ```
 
-Create `tsconfig.json`:
+创建 `tsconfig.json`：
 
 ```json
 {
@@ -115,7 +115,7 @@ Create `tsconfig.json`:
 }
 ```
 
-Create `tsconfig.node.json`:
+创建 `tsconfig.node.json`：
 
 ```json
 {
@@ -134,7 +134,7 @@ Create `tsconfig.node.json`:
 }
 ```
 
-Create `vite.config.ts`:
+创建 `vite.config.ts`：
 
 ```ts
 import react from "@vitejs/plugin-react";
@@ -153,7 +153,7 @@ export default defineConfig({
 });
 ```
 
-Create `vitest.config.ts`:
+创建 `vitest.config.ts`：
 
 ```ts
 import react from "@vitejs/plugin-react";
@@ -169,7 +169,7 @@ export default defineConfig({
 });
 ```
 
-Create `index.html`:
+创建 `index.html`：
 
 ```html
 <!doctype html>
@@ -186,7 +186,7 @@ Create `index.html`:
 </html>
 ```
 
-Create `src/shared/searchTypes.ts`:
+创建 `src/shared/searchTypes.ts`：
 
 ```ts
 export interface SearchResult {
@@ -202,48 +202,56 @@ export interface SearchResponse {
 }
 ```
 
-- [ ] **Step 2: Install dependencies**
+- [ ] **步骤 2：安装依赖**
 
-Run: `npm install`
+运行：
 
-Expected: dependencies install and `package-lock.json` is created.
+```powershell
+npm install
+```
 
-- [ ] **Step 3: Verify scaffold builds fail only because source entry files are missing**
+预期：依赖安装成功，生成 `package-lock.json`。
 
-Run: `npm run build`
+- [ ] **步骤 3：验证骨架状态**
 
-Expected: FAIL with missing `src/main/main.ts` or renderer entry files. This confirms tooling is wired before app code exists.
+运行：
 
-- [ ] **Step 4: Commit scaffold**
+```powershell
+npm run build
+```
 
-```bash
+预期：构建失败，原因是主进程或渲染进程入口文件尚未创建。这说明工具链已接通，但业务代码还未开始。
+
+- [ ] **步骤 4：提交项目骨架**
+
+```powershell
 git add package.json package-lock.json tsconfig.json tsconfig.node.json vite.config.ts vitest.config.ts index.html src/shared/searchTypes.ts
 git commit -m "chore: scaffold Electron React project"
 ```
 
-## Task 2: Everything Search Adapter
+## 任务 2：实现 Everything 搜索适配器
 
-**Files:**
-- Create: `src/main/everythingSearch.ts`
-- Test: `tests/main/everythingSearch.test.ts`
-- Modify: `tests/setup.ts`
+**文件：**
+- 新建：`src/main/everythingSearch.ts`
+- 新建测试：`tests/main/everythingSearch.test.ts`
+- 新建：`tests/setup.ts`
 
-- [ ] **Step 1: Write failing tests for parsing and search behavior**
+- [ ] **步骤 1：先写失败测试**
 
-Create `tests/setup.ts`:
+创建 `tests/setup.ts`：
 
 ```ts
 import "@testing-library/jest-dom/vitest";
 ```
 
-Create `tests/main/everythingSearch.test.ts`:
+创建 `tests/main/everythingSearch.test.ts`：
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
 import { parseEverythingOutput, searchEverything } from "../../src/main/everythingSearch";
 
 describe("parseEverythingOutput", () => {
-  it("turns absolute paths into displayable search results", () => {
+  it("将绝对路径转换为可展示的搜索结果", () => {
     const output = [
       "D:\\Everything\\Everything.exe",
       "C:\\Users\\bfs\\Desktop\\notes.md"
@@ -265,13 +273,13 @@ describe("parseEverythingOutput", () => {
     ]);
   });
 
-  it("ignores blank output lines", () => {
+  it("忽略空行", () => {
     expect(parseEverythingOutput("\r\nD:\\file.txt\r\n\r\n")).toHaveLength(1);
   });
 });
 
 describe("searchEverything", () => {
-  it("returns an empty result without spawning when query is blank", async () => {
+  it("查询为空时不启动进程并返回空结果", async () => {
     const execFile = vi.fn();
     const startEverything = vi.fn();
 
@@ -281,7 +289,7 @@ describe("searchEverything", () => {
     expect(execFile).not.toHaveBeenCalled();
   });
 
-  it("calls es.exe with a result limit and parses stdout", async () => {
+  it("调用 es.exe 并解析 stdout", async () => {
     const execFile = vi.fn().mockResolvedValue({ stdout: "D:\\file.txt\r\n", stderr: "" });
     const startEverything = vi.fn();
 
@@ -291,7 +299,7 @@ describe("searchEverything", () => {
     expect(response.results[0]?.path).toBe("D:\\file.txt");
   });
 
-  it("starts Everything and retries once when IPC is not found", async () => {
+  it("Everything IPC 不可用时启动 Everything 并重试一次", async () => {
     const execFile = vi
       .fn()
       .mockRejectedValueOnce(new Error("Error 8: Everything IPC not found"))
@@ -305,7 +313,7 @@ describe("searchEverything", () => {
     expect(response.results[0]?.name).toBe("again.txt");
   });
 
-  it("returns a short error when the command fails after retry", async () => {
+  it("重试后仍失败时返回简短错误", async () => {
     const execFile = vi.fn().mockRejectedValue(new Error("boom"));
     const startEverything = vi.fn();
 
@@ -316,15 +324,17 @@ describe("searchEverything", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `npm test -- tests/main/everythingSearch.test.ts`
+```powershell
+npm test -- tests/main/everythingSearch.test.ts
+```
 
-Expected: FAIL because `src/main/everythingSearch.ts` does not exist.
+预期：失败，因为 `src/main/everythingSearch.ts` 尚不存在。
 
-- [ ] **Step 3: Implement Everything adapter**
+- [ ] **步骤 3：实现搜索适配器**
 
-Create `src/main/everythingSearch.ts`:
+创建 `src/main/everythingSearch.ts`：
 
 ```ts
 import { execFile as execFileCallback } from "node:child_process";
@@ -406,41 +416,43 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
 }
 ```
 
-- [ ] **Step 4: Run tests to verify adapter passes**
+- [ ] **步骤 4：运行测试确认通过**
 
-Run: `npm test -- tests/main/everythingSearch.test.ts`
+```powershell
+npm test -- tests/main/everythingSearch.test.ts
+```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 5: Commit adapter**
+- [ ] **步骤 5：提交搜索适配器**
 
-```bash
+```powershell
 git add src/main/everythingSearch.ts tests/main/everythingSearch.test.ts tests/setup.ts
 git commit -m "feat: add Everything search adapter"
 ```
 
-## Task 3: Hotkey State Machine
+## 任务 3：实现双击 Ctrl 检测
 
-**Files:**
-- Create: `src/main/hotkeyDetector.ts`
-- Test: `tests/main/hotkeyDetector.test.ts`
+**文件：**
+- 新建：`src/main/hotkeyDetector.ts`
+- 新建测试：`tests/main/hotkeyDetector.test.ts`
 
-- [ ] **Step 1: Write failing tests for double Ctrl detection**
+- [ ] **步骤 1：先写失败测试**
 
-Create `tests/main/hotkeyDetector.test.ts`:
+创建 `tests/main/hotkeyDetector.test.ts`：
 
 ```ts
 import { describe, expect, it } from "vitest";
 import { createDoubleCtrlDetector } from "../../src/main/hotkeyDetector";
 
 describe("createDoubleCtrlDetector", () => {
-  it("does not trigger on the first Ctrl press", () => {
+  it("第一次按 Ctrl 不触发", () => {
     const detector = createDoubleCtrlDetector(350);
 
     expect(detector.record("Control", 1000)).toBe(false);
   });
 
-  it("triggers when Ctrl is pressed twice within the threshold", () => {
+  it("阈值内连续按两次 Ctrl 会触发", () => {
     const detector = createDoubleCtrlDetector(350);
 
     detector.record("Control", 1000);
@@ -448,7 +460,7 @@ describe("createDoubleCtrlDetector", () => {
     expect(detector.record("Control", 1250)).toBe(true);
   });
 
-  it("does not trigger when the second Ctrl press is too late", () => {
+  it("第二次 Ctrl 超时则不触发", () => {
     const detector = createDoubleCtrlDetector(350);
 
     detector.record("Control", 1000);
@@ -456,7 +468,7 @@ describe("createDoubleCtrlDetector", () => {
     expect(detector.record("Control", 1500)).toBe(false);
   });
 
-  it("resets after a successful double press", () => {
+  it("触发后会重置状态", () => {
     const detector = createDoubleCtrlDetector(350);
 
     detector.record("Control", 1000);
@@ -465,7 +477,7 @@ describe("createDoubleCtrlDetector", () => {
     expect(detector.record("Control", 1200)).toBe(false);
   });
 
-  it("ignores non-Ctrl keys", () => {
+  it("忽略非 Ctrl 按键", () => {
     const detector = createDoubleCtrlDetector(350);
 
     detector.record("Control", 1000);
@@ -475,15 +487,17 @@ describe("createDoubleCtrlDetector", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `npm test -- tests/main/hotkeyDetector.test.ts`
+```powershell
+npm test -- tests/main/hotkeyDetector.test.ts
+```
 
-Expected: FAIL because `src/main/hotkeyDetector.ts` does not exist.
+预期：失败，因为 `src/main/hotkeyDetector.ts` 尚不存在。
 
-- [ ] **Step 3: Implement detector**
+- [ ] **步骤 3：实现检测器**
 
-Create `src/main/hotkeyDetector.ts`:
+创建 `src/main/hotkeyDetector.ts`：
 
 ```ts
 export interface DoubleCtrlDetector {
@@ -507,38 +521,40 @@ export function createDoubleCtrlDetector(thresholdMs = 350): DoubleCtrlDetector 
 }
 ```
 
-- [ ] **Step 4: Run tests to verify detector passes**
+- [ ] **步骤 4：运行测试确认通过**
 
-Run: `npm test -- tests/main/hotkeyDetector.test.ts`
+```powershell
+npm test -- tests/main/hotkeyDetector.test.ts
+```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 5: Commit detector**
+- [ ] **步骤 5：提交检测器**
 
-```bash
+```powershell
 git add src/main/hotkeyDetector.ts tests/main/hotkeyDetector.test.ts
 git commit -m "feat: add double Ctrl detector"
 ```
 
-## Task 4: Main Process, IPC, and File Actions
+## 任务 4：实现主进程、IPC 和文件动作
 
-**Files:**
-- Create: `src/main/fileActions.ts`
-- Create: `src/main/ipc.ts`
-- Create: `src/main/main.ts`
-- Create: `src/preload.ts`
-- Test: `tests/main/fileActions.test.ts`
+**文件：**
+- 新建：`src/main/fileActions.ts`
+- 新建：`src/main/ipc.ts`
+- 新建：`src/main/main.ts`
+- 新建：`src/preload.ts`
+- 新建测试：`tests/main/fileActions.test.ts`
 
-- [ ] **Step 1: Write failing tests for file action helpers**
+- [ ] **步骤 1：先写文件动作失败测试**
 
-Create `tests/main/fileActions.test.ts`:
+创建 `tests/main/fileActions.test.ts`：
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
 import { createFileActions } from "../../src/main/fileActions";
 
 describe("createFileActions", () => {
-  it("opens the selected file path", async () => {
+  it("打开选中的文件路径", async () => {
     const openPath = vi.fn().mockResolvedValue("");
     const showItemInFolder = vi.fn();
     const writeText = vi.fn();
@@ -549,7 +565,7 @@ describe("createFileActions", () => {
     expect(openPath).toHaveBeenCalledWith("D:\\file.txt");
   });
 
-  it("reveals the selected file path", () => {
+  it("在资源管理器中定位选中的文件", () => {
     const openPath = vi.fn();
     const showItemInFolder = vi.fn();
     const writeText = vi.fn();
@@ -560,7 +576,7 @@ describe("createFileActions", () => {
     expect(showItemInFolder).toHaveBeenCalledWith("D:\\file.txt");
   });
 
-  it("copies the selected file path", () => {
+  it("复制选中文件路径", () => {
     const openPath = vi.fn();
     const showItemInFolder = vi.fn();
     const writeText = vi.fn();
@@ -573,15 +589,17 @@ describe("createFileActions", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `npm test -- tests/main/fileActions.test.ts`
+```powershell
+npm test -- tests/main/fileActions.test.ts
+```
 
-Expected: FAIL because `src/main/fileActions.ts` does not exist.
+预期：失败，因为 `src/main/fileActions.ts` 尚不存在。
 
-- [ ] **Step 3: Implement file action helpers**
+- [ ] **步骤 3：实现文件动作**
 
-Create `src/main/fileActions.ts`:
+创建 `src/main/fileActions.ts`：
 
 ```ts
 import { clipboard, shell } from "electron";
@@ -613,9 +631,9 @@ export const fileActions = createFileActions({
 });
 ```
 
-- [ ] **Step 4: Create IPC bridge and main process**
+- [ ] **步骤 4：实现 IPC、preload 和主进程**
 
-Create `src/main/ipc.ts`:
+创建 `src/main/ipc.ts`：
 
 ```ts
 import { ipcMain } from "electron";
@@ -630,7 +648,7 @@ export function registerIpc() {
 }
 ```
 
-Create `src/preload.ts`:
+创建 `src/preload.ts`：
 
 ```ts
 import { contextBridge, ipcRenderer } from "electron";
@@ -659,7 +677,7 @@ contextBridge.exposeInMainWorld("everythingSearch", api);
 export type EverythingSearchApi = typeof api;
 ```
 
-Create `src/main/main.ts`:
+创建 `src/main/main.ts`：
 
 ```ts
 import { BrowserWindow, app, globalShortcut, screen } from "electron";
@@ -743,35 +761,34 @@ app.on("will-quit", () => {
 });
 ```
 
-- [ ] **Step 5: Run tests and typecheck**
+- [ ] **步骤 5：运行测试和构建检查**
 
-Run: `npm test -- tests/main/fileActions.test.ts`
+```powershell
+npm test -- tests/main/fileActions.test.ts
+npm run build
+```
 
-Expected: PASS.
+预期：文件动作测试通过；构建仍可能因为渲染进程文件尚不存在而失败，但主进程相关类型错误应已解决。
 
-Run: `npm run build`
+- [ ] **步骤 6：提交主进程能力**
 
-Expected: FAIL because renderer files do not exist yet, with no errors in main modules.
-
-- [ ] **Step 6: Commit main process**
-
-```bash
+```powershell
 git add src/main/fileActions.ts src/main/ipc.ts src/main/main.ts src/preload.ts tests/main/fileActions.test.ts
 git commit -m "feat: wire Electron main process"
 ```
 
-## Task 5: Renderer Search UI
+## 任务 5：实现搜索框 UI
 
-**Files:**
-- Create: `src/renderer/App.tsx`
-- Create: `src/renderer/main.tsx`
-- Create: `src/renderer/styles.css`
-- Create: `src/renderer/global.d.ts`
-- Test: `tests/renderer/App.test.tsx`
+**文件：**
+- 新建：`src/renderer/App.tsx`
+- 新建：`src/renderer/main.tsx`
+- 新建：`src/renderer/styles.css`
+- 新建：`src/renderer/global.d.ts`
+- 新建测试：`tests/renderer/App.test.tsx`
 
-- [ ] **Step 1: Write failing renderer tests**
+- [ ] **步骤 1：先写渲染进程失败测试**
 
-Create `tests/renderer/App.test.tsx`:
+创建 `tests/renderer/App.test.tsx`：
 
 ```tsx
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -798,7 +815,7 @@ beforeEach(() => {
 });
 
 describe("App", () => {
-  it("searches and renders results as the user types", async () => {
+  it("用户输入时搜索并渲染结果", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
@@ -810,7 +827,7 @@ describe("App", () => {
     expect(screen.getByText("D:\\a.txt")).toBeInTheDocument();
   });
 
-  it("opens the selected result with Enter", async () => {
+  it("按 Enter 打开当前选中结果", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
@@ -822,7 +839,7 @@ describe("App", () => {
     expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
   });
 
-  it("moves selection with arrow keys", async () => {
+  it("方向键可以移动选中项", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
@@ -835,7 +852,7 @@ describe("App", () => {
     expect(api.openPath).toHaveBeenCalledWith("D:\\b.txt");
   });
 
-  it("reveals the selected result with Alt+Enter", async () => {
+  it("Alt+Enter 打开选中结果所在位置", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
@@ -847,7 +864,7 @@ describe("App", () => {
     expect(api.revealPath).toHaveBeenCalledWith("D:\\a.txt");
   });
 
-  it("copies the selected path with Ctrl+C", async () => {
+  it("Ctrl+C 复制选中结果路径", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
@@ -861,15 +878,17 @@ describe("App", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `npm test -- tests/renderer/App.test.tsx`
+```powershell
+npm test -- tests/renderer/App.test.tsx
+```
 
-Expected: FAIL because `src/renderer/App.tsx` does not exist.
+预期：失败，因为 `src/renderer/App.tsx` 尚不存在。
 
-- [ ] **Step 3: Implement renderer API typing**
+- [ ] **步骤 3：实现渲染进程 API 类型**
 
-Create `src/renderer/global.d.ts`:
+创建 `src/renderer/global.d.ts`：
 
 ```ts
 import type { EverythingSearchApi } from "../preload";
@@ -883,9 +902,9 @@ declare global {
 export {};
 ```
 
-- [ ] **Step 4: Implement renderer app**
+- [ ] **步骤 4：实现搜索框组件**
 
-Create `src/renderer/App.tsx`:
+创建 `src/renderer/App.tsx`：
 
 ```tsx
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -1017,9 +1036,9 @@ export default function App() {
 }
 ```
 
-- [ ] **Step 5: Implement renderer bootstrap and styles**
+- [ ] **步骤 5：实现启动入口和样式**
 
-Create `src/renderer/main.tsx`:
+创建 `src/renderer/main.tsx`：
 
 ```tsx
 import { StrictMode } from "react";
@@ -1033,7 +1052,7 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
-Create `src/renderer/styles.css`:
+创建 `src/renderer/styles.css`：
 
 ```css
 * {
@@ -1153,33 +1172,35 @@ footer {
 }
 ```
 
-- [ ] **Step 6: Run renderer tests**
+- [ ] **步骤 6：运行渲染进程测试**
 
-Run: `npm test -- tests/renderer/App.test.tsx`
+```powershell
+npm test -- tests/renderer/App.test.tsx
+```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Commit renderer**
+- [ ] **步骤 7：提交搜索框 UI**
 
-```bash
+```powershell
 git add src/renderer tests/renderer
 git commit -m "feat: add launcher renderer"
 ```
 
-## Task 6: Window Hide and Final Verification
+## 任务 6：实现 Esc 隐藏窗口并做最终验证
 
-**Files:**
-- Modify: `src/preload.ts`
-- Modify: `src/main/ipc.ts`
-- Modify: `src/renderer/App.tsx`
-- Test: `tests/renderer/App.test.tsx`
+**文件：**
+- 修改：`src/preload.ts`
+- 修改：`src/main/ipc.ts`
+- 修改：`src/renderer/App.tsx`
+- 修改测试：`tests/renderer/App.test.tsx`
 
-- [ ] **Step 1: Add failing test for Esc hiding**
+- [ ] **步骤 1：追加 Esc 隐藏窗口的失败测试**
 
-Append to `tests/renderer/App.test.tsx`:
+在 `tests/renderer/App.test.tsx` 末尾追加：
 
 ```tsx
-it("hides the window with Escape", () => {
+it("按 Escape 隐藏窗口", () => {
   api.hideWindow = vi.fn();
   render(<App />);
 
@@ -1189,15 +1210,17 @@ it("hides the window with Escape", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `npm test -- tests/renderer/App.test.tsx`
+```powershell
+npm test -- tests/renderer/App.test.tsx
+```
 
-Expected: FAIL because `hideWindow` does not exist or is not called.
+预期：失败，因为 `hideWindow` 还不存在或尚未被调用。
 
-- [ ] **Step 3: Wire hide-window IPC**
+- [ ] **步骤 3：接通隐藏窗口 IPC**
 
-Modify `src/preload.ts` to add:
+在 `src/preload.ts` 的 API 中加入：
 
 ```ts
 hideWindow(): Promise<void> {
@@ -1205,7 +1228,7 @@ hideWindow(): Promise<void> {
 }
 ```
 
-Modify `src/main/ipc.ts`:
+将 `src/main/ipc.ts` 修改为：
 
 ```ts
 import { BrowserWindow, ipcMain } from "electron";
@@ -1221,7 +1244,7 @@ export function registerIpc() {
 }
 ```
 
-Modify the key handler in `src/renderer/App.tsx` to include:
+在 `src/renderer/App.tsx` 的键盘处理函数中加入：
 
 ```ts
 if (event.key === "Escape") {
@@ -1230,40 +1253,44 @@ if (event.key === "Escape") {
 }
 ```
 
-- [ ] **Step 4: Run all tests and build**
+- [ ] **步骤 4：运行全部测试和构建**
 
-Run: `npm test`
+```powershell
+npm test
+npm run build
+```
 
-Expected: PASS.
+预期：测试全部通过，构建成功，`dist` 中包含主进程、preload 和渲染进程输出。
 
-Run: `npm run build`
+- [ ] **步骤 5：手动冒烟测试**
 
-Expected: PASS and `dist` contains main, preload, and renderer output.
+运行：
 
-- [ ] **Step 5: Manual smoke test**
+```powershell
+npm start
+```
 
-Run: `npm start`
+预期：
 
-Expected:
-- App starts hidden.
-- Double Ctrl shows the search window.
-- Double Ctrl hides it.
-- Double Ctrl shows it again.
-- Esc hides it.
-- Searching `Everything.exe` shows results from `D:\Everything\es.exe`.
-- Enter opens the selected item.
-- Alt+Enter reveals the selected item in Explorer.
-- Ctrl+C copies the selected path.
+- 应用启动后默认隐藏。
+- 双击 Ctrl 显示搜索窗口。
+- 再次双击 Ctrl 隐藏窗口。
+- 再次双击 Ctrl 可重新显示窗口。
+- Esc 隐藏窗口。
+- 搜索 `Everything.exe` 可以展示来自 `D:\Everything\es.exe` 的结果。
+- Enter 打开选中项。
+- Alt+Enter 在资源管理器中定位选中项。
+- Ctrl+C 复制选中项路径。
 
-- [ ] **Step 6: Commit final integration**
+- [ ] **步骤 6：提交最终集成**
 
-```bash
+```powershell
 git add src/preload.ts src/main/ipc.ts src/renderer/App.tsx tests/renderer/App.test.tsx
 git commit -m "feat: support hiding launcher with Escape"
 ```
 
-## Self-Review
+## 自检
 
-- Spec coverage: The plan covers the single floating UI, double Ctrl toggle, Esc hide, Everything CLI search, result display, Enter open, Alt+Enter reveal, Ctrl+C copy, IPC error handling, and final smoke testing.
-- Placeholder scan: No incomplete markers or unspecified steps are present.
-- Type consistency: `SearchResult`, `SearchResponse`, and `EverythingSearchApi` are defined once and referenced consistently by main, preload, renderer, and tests.
+- 需求覆盖：计划覆盖单框浮窗、双击 Ctrl 显示/隐藏、Esc 隐藏、Everything CLI 搜索、结果展示、Enter 打开、Alt+Enter 定位、Ctrl+C 复制、错误处理和最终冒烟测试。
+- 占位检查：没有未完成标记或含糊步骤。
+- 类型一致性：`SearchResult`、`SearchResponse`、`EverythingSearchApi` 在主进程、preload、渲染进程和测试中保持一致。
