@@ -122,6 +122,10 @@ body {
   background: linear-gradient(135deg, #d9e8ff, #5da2ff);
 }
 
+.realIcon {
+  object-fit: contain;
+}
+
 .resultText {
   min-width: 0;
 }

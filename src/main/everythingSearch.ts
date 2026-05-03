@@ -13,11 +13,13 @@ type ProcessOutput = string | Buffer;
 type ExecFile = (file: string, args: string[]) => Promise<{ stdout: ProcessOutput; stderr: ProcessOutput }>;
 type StartEverything = () => Promise<void>;
 type LoadUsageHistory = () => Promise<UsageHistory>;
+type GetFileIcon = (filePath: string) => Promise<string | undefined>;
 
 interface SearchDeps {
   execFile?: ExecFile;
   startEverything?: StartEverything;
   loadUsageHistory?: LoadUsageHistory;
+  getFileIcon?: GetFileIcon;
 }
 
 export function parseEverythingOutput(output: string): SearchResult[] {
@@ -83,6 +85,25 @@ function isEverythingIpcError(error: unknown): boolean {
   return messageFromError(error).includes("Everything IPC not found");
 }
 
+async function withIcons(results: SearchResult[], getFileIcon?: GetFileIcon): Promise<SearchResult[]> {
+  if (!getFileIcon) {
+    return results;
+  }
+
+  return Promise.all(
+    results.map(async (result) => {
+      try {
+        return {
+          ...result,
+          iconDataUrl: await getFileIcon(result.path)
+        };
+      } catch {
+        return result;
+      }
+    })
+  );
+}
+
 export async function searchEverything(query: string, deps: SearchDeps = {}): Promise<SearchResponse> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -95,7 +116,10 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
   const args = buildEverythingArgs(parsedQuery, 200);
   const getRankedResults = async (stdout: ProcessOutput) => {
     const usageHistory = deps.loadUsageHistory ? await deps.loadUsageHistory() : {};
-    return rankSearchResults(parseEverythingOutput(decodeEverythingOutput(stdout)), parsedQuery, usageHistory);
+    return withIcons(
+      rankSearchResults(parseEverythingOutput(decodeEverythingOutput(stdout)), parsedQuery, usageHistory),
+      deps.getFileIcon
+    );
   };
 
   try {

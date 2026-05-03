@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { SearchResult } from "../shared/searchTypes.js";
-import type { ParsedSearchQuery } from "./searchQuery.js";
+import { expandSearchTerm, type ParsedSearchQuery } from "./searchQuery.js";
 
 export interface UsageStats {
   openCount: number;
@@ -33,28 +33,33 @@ function nameWithoutExtension(fileName: string) {
 }
 
 function scoreKeyword(result: SearchResult, keyword: string) {
-  const normalizedKeyword = normalize(keyword);
   const normalizedName = normalize(result.name);
   const normalizedStem = normalize(nameWithoutExtension(result.name));
   const normalizedPath = normalize(result.path);
 
-  if (normalizedName === normalizedKeyword || normalizedStem === normalizedKeyword) {
-    return 1000;
-  }
+  return Math.max(
+    ...expandSearchTerm(keyword).map((term) => {
+      const normalizedKeyword = normalize(term);
 
-  if (normalizedName.startsWith(normalizedKeyword) || normalizedStem.startsWith(normalizedKeyword)) {
-    return 800;
-  }
+      if (normalizedName === normalizedKeyword || normalizedStem === normalizedKeyword) {
+        return 1000;
+      }
 
-  if (normalizedName.includes(normalizedKeyword) || normalizedStem.includes(normalizedKeyword)) {
-    return 600;
-  }
+      if (normalizedName.startsWith(normalizedKeyword) || normalizedStem.startsWith(normalizedKeyword)) {
+        return 800;
+      }
 
-  if (normalizedPath.includes(normalizedKeyword)) {
-    return 300;
-  }
+      if (normalizedName.includes(normalizedKeyword) || normalizedStem.includes(normalizedKeyword)) {
+        return 600;
+      }
 
-  return 0;
+      if (normalizedPath.includes(normalizedKeyword)) {
+        return 300;
+      }
+
+      return 0;
+    })
+  );
 }
 
 function scorePathTerms(result: SearchResult, pathTerms: string[]) {

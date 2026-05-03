@@ -4,6 +4,7 @@ export interface SearchResult {
   path: string;
   directory: string;
   kind?: "app" | "folder" | "file";
+  iconDataUrl?: string;
 }
 
 export interface SearchResponse {

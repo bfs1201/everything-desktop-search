@@ -19,6 +19,11 @@ function resultIconClass(result: SearchResult) {
   return result.name.includes(".") ? "resultIcon fileIcon" : "resultIcon folderIcon";
 }
 
+function openResult(result: SearchResult) {
+  window.everythingSearch.openPath(result.path);
+  window.everythingSearch.hideWindow();
+}
+
 export default function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -97,8 +102,7 @@ export default function App() {
         const result = resultsRef.current[number - 1];
         if (result) {
           event.preventDefault();
-          window.everythingSearch.openPath(result.path);
-          window.everythingSearch.hideWindow();
+          openResult(result);
         }
       }
       if (event.ctrlKey && event.key === "9" && hasMore) {
@@ -125,8 +129,7 @@ export default function App() {
         if (event.altKey) {
           window.everythingSearch.revealPath(activeSelected.path);
         } else {
-          window.everythingSearch.openPath(activeSelected.path);
-          window.everythingSearch.hideWindow();
+          openResult(activeSelected);
         }
       }
       if (event.key.toLowerCase() === "c" && event.ctrlKey && activeSelected) {
@@ -183,8 +186,13 @@ export default function App() {
                 role="option"
                 aria-selected={index === selectedIndex}
                 onMouseEnter={() => selectIndex(index)}
+                onClick={() => openResult(result)}
               >
-                <div className={resultIconClass(result)} aria-hidden="true" />
+                {result.iconDataUrl ? (
+                  <img className="resultIcon realIcon" src={result.iconDataUrl} alt={`${result.name} 图标`} />
+                ) : (
+                  <div className={resultIconClass(result)} aria-hidden="true" />
+                )}
                 <div className="resultText">
                   <div className="name">{result.name}</div>
                   <div className="path">{result.path}</div>

@@ -95,6 +95,20 @@ describe("searchEverything", () => {
     ]);
   });
 
+  it("adds icon data URLs when an icon provider is available", async () => {
+    const execFile = vi.fn().mockResolvedValue({ stdout: "D:\\Weixin\\Weixin.exe\r\n", stderr: "" });
+    const startEverything = vi.fn();
+    const getFileIcon = vi.fn().mockResolvedValue("data:image/png;base64,abc");
+
+    const response = await searchEverything("weixin", { execFile, startEverything, getFileIcon });
+
+    expect(getFileIcon).toHaveBeenCalledWith("D:\\Weixin\\Weixin.exe");
+    expect(response.results[0]).toMatchObject({
+      path: "D:\\Weixin\\Weixin.exe",
+      iconDataUrl: "data:image/png;base64,abc"
+    });
+  });
+
   it("decodes Chinese paths returned as GB18030 bytes", async () => {
     const stdout = Buffer.from([
       0x43, 0x3a, 0x5c, 0x55, 0x73, 0x65, 0x72, 0x73, 0x5c, 0x62, 0x66, 0x73, 0x5c,

@@ -111,6 +111,40 @@ describe("App", () => {
     expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
   });
 
+  it("渲染搜索结果自带的真实图标", async () => {
+    api.search.mockResolvedValue({
+      results: [
+        {
+          id: "D:\\Weixin\\Weixin.exe",
+          name: "Weixin.exe",
+          path: "D:\\Weixin\\Weixin.exe",
+          directory: "D:\\Weixin",
+          iconDataUrl: "data:image/png;base64,abc"
+        }
+      ]
+    });
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
+      target: { value: "weixin" }
+    });
+
+    expect(await screen.findByAltText("Weixin.exe 图标")).toHaveAttribute("src", "data:image/png;base64,abc");
+  });
+
+  it("点击结果项会直接打开目标并隐藏窗口", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("a.txt");
+    fireEvent.click(screen.getByText("a.txt").closest('[role="option"]')!);
+
+    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.hideWindow).toHaveBeenCalledOnce();
+  });
+
   it("鼠标悬停结果时同步高亮和实际选中项", async () => {
     render(<App />);
 

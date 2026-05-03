@@ -15,7 +15,11 @@ const fileActions = createFileActions({
 export function registerIpc() {
   ipcMain.handle("search", (_event, query: string) =>
     searchEverything(query, {
-      loadUsageHistory: () => loadUsageHistory(historyPath)
+      loadUsageHistory: () => loadUsageHistory(historyPath),
+      getFileIcon: async (filePath) => {
+        const icon = await app.getFileIcon(filePath, { size: "normal" });
+        return icon.toDataURL();
+      }
     })
   );
   ipcMain.handle("open-path", async (_event, filePath: string) => fileActions.open(filePath));

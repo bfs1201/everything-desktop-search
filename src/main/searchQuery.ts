@@ -9,6 +9,11 @@ export interface ParsedSearchQuery {
 
 const FILTERS = new Set(["folder", "file", "doc", "pic", "video", "audio"]);
 
+const PINYIN_ALIASES: Record<string, string[]> = {
+  weixin: ["微信"],
+  wechat: ["微信"]
+};
+
 const EXTENSION_FILTERS: Record<Exclude<SearchFilter, "folder" | "file" | undefined>, string> = {
   doc: "ext:doc;docx;pdf;txt;md;xls;xlsx;ppt;pptx",
   pic: "ext:jpg;jpeg;png;gif;webp;bmp;svg",
@@ -61,6 +66,16 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
   return { raw, filter, keywords, pathTerms };
 }
 
+export function expandSearchTerm(term: string): string[] {
+  const aliases = PINYIN_ALIASES[term.toLowerCase()] ?? [];
+  return [term, ...aliases];
+}
+
+function formatEverythingTerm(term: string) {
+  const expandedTerms = expandSearchTerm(term);
+  return expandedTerms.length > 1 ? `<${expandedTerms.join("|")}>` : term;
+}
+
 export function buildEverythingArgs(query: ParsedSearchQuery, limit = 200): string[] {
   const args = ["-n", String(limit)];
 
@@ -75,7 +90,7 @@ export function buildEverythingArgs(query: ParsedSearchQuery, limit = 200): stri
   }
 
   args.push(...query.pathTerms);
-  args.push(...query.keywords.filter((keyword) => !query.pathTerms.includes(keyword)));
+  args.push(...query.keywords.filter((keyword) => !query.pathTerms.includes(keyword)).map(formatEverythingTerm));
 
   return args;
 }

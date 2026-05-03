@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEverythingArgs, parseSearchQuery } from "../../src/main/searchQuery";
+import { buildEverythingArgs, expandSearchTerm, parseSearchQuery } from "../../src/main/searchQuery";
 
 describe("parseSearchQuery", () => {
   it("parses folder filter", () => {
@@ -58,5 +58,10 @@ describe("buildEverythingArgs", () => {
       "d:\\",
       "毕业"
     ]);
+  });
+
+  it("expands pinyin aliases into an Everything OR query", () => {
+    expect(expandSearchTerm("weixin")).toEqual(["weixin", "微信"]);
+    expect(buildEverythingArgs(parseSearchQuery("weixin"))).toEqual(["-n", "200", "<weixin|微信>"]);
   });
 });
