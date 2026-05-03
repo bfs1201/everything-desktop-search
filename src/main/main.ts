@@ -43,7 +43,7 @@ async function createWindow() {
     alwaysOnTop: true,
     skipTaskbar: true,
     webPreferences: {
-      preload: path.join(app.getAppPath(), "dist/preload.js"),
+      preload: path.join(app.getAppPath(), "dist/preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false
     }

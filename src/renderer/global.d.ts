@@ -1,4 +1,4 @@
-import type { EverythingSearchApi } from "../preload";
+import type { EverythingSearchApi } from "../preload.cjs";
 
 declare global {
   interface Window {
@@ -7,4 +7,3 @@ declare global {
 }
 
 export {};
-
