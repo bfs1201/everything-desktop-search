@@ -14,7 +14,7 @@ function result(filePath: string): SearchResult {
 }
 
 describe("rankSearchResults", () => {
-  it("prefers start menu application shortcuts over same-name folders", () => {
+  it("prefers executable application entries over shortcuts and same-name folders", () => {
     const ranked = rankSearchResults(
       [
         result("D:\\QQ"),
@@ -25,8 +25,8 @@ describe("rankSearchResults", () => {
     );
 
     expect(ranked.map((item) => item.path)).toEqual([
-      "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\QQ.lnk",
       "C:\\Program Files\\Tencent\\QQ\\QQ.exe",
+      "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\QQ.lnk",
       "D:\\QQ"
     ]);
     expect(ranked[0]?.kind).toBe("app");
@@ -68,11 +68,36 @@ describe("rankSearchResults", () => {
     );
 
     expect(ranked.map((item) => item.path)).toEqual([
-      "D:\\Projects\\qq",
       "D:\\Projects\\qq-music.exe",
+      "D:\\Projects\\qq",
       "D:\\Projects\\my-qq-note.txt",
       "D:\\qq\\notes.txt"
     ]);
+  });
+
+  it("prefers executable files over non-executable file results", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Downloads\\weixin.png"),
+        result("D:\\Weixin\\Weixin.exe"),
+        result("D:\\Downloads\\weixin.js")
+      ],
+      parseSearchQuery("weixin")
+    );
+
+    expect(ranked[0]?.path).toBe("D:\\Weixin\\Weixin.exe");
+  });
+
+  it("prefers executable files over matching shortcut entries", () => {
+    const ranked = rankSearchResults(
+      [
+        result("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Weixin.lnk"),
+        result("D:\\Weixin\\Weixin.exe")
+      ],
+      parseSearchQuery("weixin")
+    );
+
+    expect(ranked[0]?.path).toBe("D:\\Weixin\\Weixin.exe");
   });
 
   it("boosts recently and frequently opened results", () => {

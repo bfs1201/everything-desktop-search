@@ -142,14 +142,17 @@ function inferredKind(result: SearchResult): SearchResult["kind"] {
 function scoreKind(result: SearchResult) {
   const kind = inferredKind(result);
   const normalizedPath = normalize(result.path);
+  const extension = path.win32.extname(result.path).toLowerCase();
 
   if (kind !== "app") {
     return kind === "file" ? 80 : 0;
   }
 
+  const executableBonus = extension === ".exe" ? 560 : 0;
+
   return APP_PATH_BONUSES.reduce((score, item) => {
     return normalizedPath.includes(item.pattern) ? score + item.bonus : score;
-  }, 120);
+  }, 120 + executableBonus);
 }
 
 export function scoreSearchResult(
