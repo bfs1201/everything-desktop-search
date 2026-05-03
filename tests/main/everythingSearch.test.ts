@@ -57,8 +57,40 @@ describe("searchEverything", () => {
 
     const response = await searchEverything("file", { execFile, startEverything });
 
-    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", ["-n", "50", "file"]);
+    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", ["-n", "200", "file"]);
     expect(response.results[0]?.path).toBe("D:\\file.txt");
+  });
+
+  it("passes folder and document filters to Everything CLI", async () => {
+    const execFile = vi.fn().mockResolvedValue({ stdout: "", stderr: "" });
+    const startEverything = vi.fn();
+
+    await searchEverything("folder: qq", { execFile, startEverything });
+    await searchEverything("doc: 毕业", { execFile, startEverything });
+
+    expect(execFile).toHaveBeenNthCalledWith(1, "D:\\Everything\\es.exe", ["-n", "200", "/ad", "qq"]);
+    expect(execFile).toHaveBeenNthCalledWith(2, "D:\\Everything\\es.exe", [
+      "-n",
+      "200",
+      "ext:doc;docx;pdf;txt;md;xls;xlsx;ppt;pptx",
+      "毕业"
+    ]);
+  });
+
+  it("sorts returned results with the V1 ranking strategy", async () => {
+    const execFile = vi.fn().mockResolvedValue({
+      stdout: ["D:\\qq\\notes.txt", "D:\\Projects\\my-qq-note.txt", "D:\\Projects\\qq"].join("\r\n"),
+      stderr: ""
+    });
+    const startEverything = vi.fn();
+
+    const response = await searchEverything("qq", { execFile, startEverything });
+
+    expect(response.results.map((item) => item.path)).toEqual([
+      "D:\\Projects\\qq",
+      "D:\\Projects\\my-qq-note.txt",
+      "D:\\qq\\notes.txt"
+    ]);
   });
 
   it("decodes Chinese paths returned as GB18030 bytes", async () => {

@@ -2,6 +2,8 @@ import { execFile as execFileCallback, spawn } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { SearchResponse, SearchResult } from "../shared/searchTypes.js";
+import { buildEverythingArgs, parseSearchQuery } from "./searchQuery.js";
+import { rankSearchResults, type UsageHistory } from "./searchRanking.js";
 
 const execFilePromise = promisify(execFileCallback);
 const ES_PATH = "D:\\Everything\\es.exe";
@@ -10,10 +12,12 @@ const EVERYTHING_PATH = "D:\\Everything\\Everything.exe";
 type ProcessOutput = string | Buffer;
 type ExecFile = (file: string, args: string[]) => Promise<{ stdout: ProcessOutput; stderr: ProcessOutput }>;
 type StartEverything = () => Promise<void>;
+type LoadUsageHistory = () => Promise<UsageHistory>;
 
 interface SearchDeps {
   execFile?: ExecFile;
   startEverything?: StartEverything;
+  loadUsageHistory?: LoadUsageHistory;
 }
 
 export function parseEverythingOutput(output: string): SearchResult[] {
@@ -72,17 +76,22 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
 
   const execFile = deps.execFile ?? defaultExecFile;
   const startEverything = deps.startEverything ?? defaultStartEverything;
-  const args = ["-n", "50", trimmed];
+  const parsedQuery = parseSearchQuery(trimmed);
+  const args = buildEverythingArgs(parsedQuery, 200);
+  const getRankedResults = async (stdout: ProcessOutput) => {
+    const usageHistory = deps.loadUsageHistory ? await deps.loadUsageHistory() : {};
+    return rankSearchResults(parseEverythingOutput(decodeEverythingOutput(stdout)), parsedQuery, usageHistory);
+  };
 
   try {
     const { stdout } = await execFile(ES_PATH, args);
-    return { results: parseEverythingOutput(decodeEverythingOutput(stdout)) };
+    return { results: await getRankedResults(stdout) };
   } catch (firstError) {
     if (isEverythingIpcError(firstError)) {
       try {
         await startEverything();
         const { stdout } = await execFile(ES_PATH, args);
-        return { results: parseEverythingOutput(decodeEverythingOutput(stdout)) };
+        return { results: await getRankedResults(stdout) };
       } catch (retryError) {
         return { results: [], error: `Everything 搜索失败：${messageFromError(retryError)}` };
       }
