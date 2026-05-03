@@ -17,8 +17,8 @@ beforeEach(() => {
   window.everythingSearch = api;
   api.search.mockResolvedValue({
     results: [
-      { id: "D:\\a.txt", name: "a.txt", path: "D:\\a.txt", directory: "D:\\" },
-      { id: "D:\\b.txt", name: "b.txt", path: "D:\\b.txt", directory: "D:\\" }
+      { id: "D:\\QQ", name: "QQ", path: "D:\\QQ", directory: "D:\\" },
+      { id: "D:\\a.txt", name: "a.txt", path: "D:\\a.txt", directory: "D:\\" }
     ]
   });
 });
@@ -31,21 +31,21 @@ describe("App", () => {
 
     expect(screen.getByPlaceholderText("搜索文件、文件夹或路径")).toBeInTheDocument();
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    expect(screen.queryByText("输入关键词开始搜索")).not.toBeInTheDocument();
-    expect(screen.queryByText("上下键选择 · Enter 打开 · Alt+Enter 定位 · Ctrl+C 复制")).not.toBeInTheDocument();
     expect(api.search).not.toHaveBeenCalled();
   });
 
-  it("输入时搜索并渲染结果", async () => {
+  it("按参考图布局渲染搜索结果", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
-      target: { value: "txt" }
+      target: { value: "qq" }
     });
 
-    await waitFor(() => expect(api.search).toHaveBeenCalledWith("txt"));
-    expect(await screen.findByText("a.txt")).toBeInTheDocument();
-    expect(screen.getByText("D:\\a.txt")).toBeInTheDocument();
+    await waitFor(() => expect(api.search).toHaveBeenCalledWith("qq"));
+    expect(await screen.findByText("QQ")).toHaveClass("name");
+    expect(screen.getByText("D:\\QQ")).toHaveClass("path");
+    expect(screen.getByText("Ctrl+1")).toHaveClass("shortcut");
+    expect(screen.getByRole("option", { selected: true })).toHaveClass("selected");
     expect(api.setExpanded).toHaveBeenLastCalledWith(true);
   });
 
@@ -55,8 +55,21 @@ describe("App", () => {
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
       target: { value: "txt" }
     });
-    await screen.findByText("a.txt");
+    await screen.findByText("QQ");
     fireEvent.keyDown(window, { key: "Enter" });
+
+    expect(api.openPath).toHaveBeenCalledWith("D:\\QQ");
+    expect(api.hideWindow).toHaveBeenCalledOnce();
+  });
+
+  it("Ctrl+数字打开对应结果", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("a.txt");
+    fireEvent.keyDown(window, { key: "2", ctrlKey: true });
 
     expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
     expect(api.hideWindow).toHaveBeenCalledOnce();
@@ -68,11 +81,11 @@ describe("App", () => {
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
       target: { value: "txt" }
     });
-    await screen.findByText("b.txt");
+    await screen.findByText("a.txt");
     fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: "Enter" });
 
-    expect(api.openPath).toHaveBeenCalledWith("D:\\b.txt");
+    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
   });
 
   it("Alt+Enter 打开选中结果所在位置", async () => {
@@ -81,10 +94,10 @@ describe("App", () => {
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
       target: { value: "txt" }
     });
-    await screen.findByText("a.txt");
+    await screen.findByText("QQ");
     fireEvent.keyDown(window, { key: "Enter", altKey: true });
 
-    expect(api.revealPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.revealPath).toHaveBeenCalledWith("D:\\QQ");
   });
 
   it("Ctrl+C 复制选中结果路径", async () => {
@@ -93,10 +106,10 @@ describe("App", () => {
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
       target: { value: "txt" }
     });
-    await screen.findByText("a.txt");
+    await screen.findByText("QQ");
     fireEvent.keyDown(window, { key: "c", ctrlKey: true });
 
-    expect(api.copyPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.copyPath).toHaveBeenCalledWith("D:\\QQ");
   });
 
   it("按 Escape 隐藏窗口", async () => {
@@ -108,9 +121,9 @@ describe("App", () => {
     expect(api.hideWindow).toHaveBeenCalledOnce();
   });
 
-  it("滚动到底部时加载下一页结果", async () => {
+  it("滚动到底部时加载下一页结果，并显示展示更多行", async () => {
     api.search.mockResolvedValue({
-      results: Array.from({ length: 25 }, (_, index) => ({
+      results: Array.from({ length: 13 }, (_, index) => ({
         id: `D:\\${index}.txt`,
         name: `${index}.txt`,
         path: `D:\\${index}.txt`,
@@ -120,11 +133,13 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
-      target: { value: "txt" }
+      target: { value: "qq" }
     });
 
     expect(await screen.findByText("0.txt")).toBeInTheDocument();
-    expect(screen.queryByText("20.txt")).not.toBeInTheDocument();
+    expect(screen.queryByText("8.txt")).not.toBeInTheDocument();
+    expect(screen.getByText(/展示更多/)).toBeInTheDocument();
+    expect(screen.getByText("qq")).toBeInTheDocument();
 
     const list = screen.getByRole("listbox");
     Object.defineProperty(list, "scrollTop", { value: 500, configurable: true });
@@ -132,6 +147,6 @@ describe("App", () => {
     Object.defineProperty(list, "scrollHeight", { value: 650, configurable: true });
     fireEvent.scroll(list);
 
-    expect(await screen.findByText("20.txt")).toBeInTheDocument();
+    expect(await screen.findByText("8.txt")).toBeInTheDocument();
   });
 });

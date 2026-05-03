@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { SearchResult } from "../shared/searchTypes";
 import "./styles.css";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 8;
 
 function useDebouncedValue(value: string, delayMs: number) {
   const [debounced, setDebounced] = useState(value);
@@ -13,6 +13,10 @@ function useDebouncedValue(value: string, delayMs: number) {
   }, [delayMs, value]);
 
   return debounced;
+}
+
+function resultIconClass(result: SearchResult) {
+  return result.name.includes(".") ? "resultIcon fileIcon" : "resultIcon folderIcon";
 }
 
 export default function App() {
@@ -27,6 +31,7 @@ export default function App() {
   const hasQuery = Boolean(query.trim());
   const visibleResults = results.slice(0, visibleCount);
   const selected = useMemo(() => results[selectedIndex], [results, selectedIndex]);
+  const hasMore = visibleCount < results.length;
 
   useEffect(() => {
     window.everythingSearch.onWindowShown(() => {
@@ -72,6 +77,19 @@ export default function App() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      const number = Number(event.key);
+      if (event.ctrlKey && Number.isInteger(number) && number >= 1 && number <= 8) {
+        const result = visibleResults[number - 1];
+        if (result) {
+          event.preventDefault();
+          window.everythingSearch.openPath(result.path);
+          window.everythingSearch.hideWindow();
+        }
+      }
+      if (event.ctrlKey && event.key === "9" && hasMore) {
+        event.preventDefault();
+        loadNextPage();
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         window.everythingSearch.hideWindow();
@@ -101,7 +119,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [results.length, selected]);
+  }, [hasMore, results.length, selected, visibleResults]);
 
   function loadNextPage() {
     setVisibleCount((count) => Math.min(count + PAGE_SIZE, results.length));
@@ -119,7 +137,6 @@ export default function App() {
     <main className={hasQuery ? "launcher expanded" : "launcher compact"}>
       <section className="panel">
         <div className="searchLine">
-          <span className="searchIcon">⌕</span>
           <input
             ref={inputRef}
             value={query}
@@ -127,35 +144,41 @@ export default function App() {
             onChange={(event) => setQuery(event.target.value)}
             autoFocus
           />
-          <kbd>Ctrl Ctrl</kbd>
+          <span className="searchWatermark">⌕</span>
         </div>
 
         {hasQuery ? (
-          <>
-            <div className="results" role="listbox" aria-label="搜索结果" onScroll={onResultsScroll}>
-              {error ? <div className="state">{error}</div> : null}
-              {!error && !isLoading && results.length === 0 ? <div className="state">没有结果</div> : null}
-              {visibleResults.map((result, index) => (
-                <div
-                  className={index === selectedIndex ? "result selected" : "result"}
-                  key={result.id}
-                  role="option"
-                  aria-selected={index === selectedIndex}
-                >
-                  <div>
-                    <div className="name">{result.name}</div>
-                    <div className="path">{result.path}</div>
-                  </div>
-                  <div className="action">{index === selectedIndex ? "Enter" : ""}</div>
+          <div className="results" role="listbox" aria-label="搜索结果" onScroll={onResultsScroll}>
+            {error ? <div className="state">{error}</div> : null}
+            {!error && !isLoading && results.length === 0 ? <div className="state">没有结果</div> : null}
+            {visibleResults.map((result, index) => (
+              <div
+                className={index === selectedIndex ? "result selected" : "result"}
+                key={result.id}
+                role="option"
+                aria-selected={index === selectedIndex}
+              >
+                <div className={resultIconClass(result)} aria-hidden="true" />
+                <div className="resultText">
+                  <div className="name">{result.name}</div>
+                  <div className="path">{result.path}</div>
                 </div>
-              ))}
-            </div>
-
-            <footer>
-              <span>上下键选择 · Enter 打开 · Alt+Enter 定位 · Ctrl+C 复制</span>
-              <span>{isLoading ? "搜索中" : `${Math.min(visibleCount, results.length)} / ${results.length} 项`}</span>
-            </footer>
-          </>
+                <div className="shortcut">Ctrl+{index + 1}</div>
+              </div>
+            ))}
+            {hasMore ? (
+              <button className="moreResult" type="button" onClick={loadNextPage}>
+                <span className="moreIcon">↗</span>
+                <span className="moreText">
+                  <span className="moreTitle">
+                    展示更多 <strong>{query}</strong> 的文件搜索结果
+                  </span>
+                  <span className="moreHint">热键: Ctrl+9</span>
+                </span>
+                <span className="shortcut">Ctrl+9</span>
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </section>
     </main>
