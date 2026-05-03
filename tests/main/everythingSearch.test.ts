@@ -13,6 +13,66 @@ describe("decodeEverythingOutput", () => {
 });
 
 describe("parseEverythingOutput", () => {
+  it("uses Everything JSON attributes to classify directories", () => {
+    const output = JSON.stringify({
+      results: [
+        {
+          name: "没有扩展名的文件",
+          path: "D:\\Downloads",
+          attributes: 32
+        },
+        {
+          name: "QQ",
+          path: "D:\\",
+          attributes: 16
+        }
+      ]
+    });
+
+    expect(parseEverythingOutput(output)).toMatchObject([
+      {
+        name: "没有扩展名的文件",
+        path: "D:\\Downloads\\没有扩展名的文件",
+        directory: "D:\\Downloads",
+        kind: "file"
+      },
+      {
+        name: "QQ",
+        path: "D:\\QQ",
+        directory: "D:\\",
+        kind: "folder"
+      }
+    ]);
+  });
+
+  it("parses real ES CLI JSON filename rows", () => {
+    const output = JSON.stringify([
+      {
+        filename: "C:\\Users\\bfs\\Desktop\\毕业设计\\",
+        attributes: 16
+      },
+      {
+        filename: "C:\\Users\\bfs\\Desktop\\毕业设计.7z",
+        attributes: 32
+      }
+    ]);
+
+    expect(parseEverythingOutput(output)).toMatchObject([
+      {
+        name: "毕业设计",
+        path: "C:\\Users\\bfs\\Desktop\\毕业设计",
+        directory: "C:\\Users\\bfs\\Desktop",
+        kind: "folder"
+      },
+      {
+        name: "毕业设计.7z",
+        path: "C:\\Users\\bfs\\Desktop\\毕业设计.7z",
+        directory: "C:\\Users\\bfs\\Desktop",
+        kind: "file"
+      }
+    ]);
+  });
+
   it("turns absolute paths into displayable search results", () => {
     const output = [
       "D:\\Everything\\Everything.exe",
@@ -59,7 +119,7 @@ describe("searchEverything", () => {
 
     const response = await searchEverything("file", { execFile, startEverything });
 
-    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", ["-n", "200", "file"]);
+    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", ["-n", "200", "-json", "-attributes", "file"]);
     expect(response.results[0]?.path).toBe("D:\\file.txt");
   });
 
@@ -70,13 +130,48 @@ describe("searchEverything", () => {
     await searchEverything("folder: qq", { execFile, startEverything });
     await searchEverything("doc: 毕业", { execFile, startEverything });
 
-    expect(execFile).toHaveBeenNthCalledWith(1, "D:\\Everything\\es.exe", ["-n", "200", "/ad", "qq"]);
+    expect(execFile).toHaveBeenNthCalledWith(1, "D:\\Everything\\es.exe", [
+      "-n",
+      "200",
+      "-json",
+      "-attributes",
+      "/ad",
+      "qq"
+    ]);
     expect(execFile).toHaveBeenNthCalledWith(2, "D:\\Everything\\es.exe", [
       "-n",
       "200",
+      "-json",
+      "-attributes",
       "ext:doc;docx;pdf;txt;md;xls;xlsx;ppt;pptx",
       "毕业"
     ]);
+  });
+
+  it("runs an additional Chinese candidate search for pinyin-like queries", async () => {
+    const execFile = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: "D:\\Images\\weixin.png\r\n", stderr: "" })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          results: [{ name: "微信.lnk", path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs", attributes: 32 }]
+        }),
+        stderr: ""
+      });
+    const startEverything = vi.fn();
+
+    const response = await searchEverything("weixin", { execFile, startEverything });
+
+    expect(execFile).toHaveBeenNthCalledWith(2, "D:\\Everything\\es.exe", [
+      "-n",
+      "300",
+      "-json",
+      "-attributes",
+      "regex:[一-龥]"
+    ]);
+    expect(response.results.map((item) => item.path)).toContain(
+      "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk"
+    );
   });
 
   it("sorts returned results with the V1 ranking strategy", async () => {
@@ -109,6 +204,23 @@ describe("searchEverything", () => {
     });
   });
 
+  it("does not request per-path icons for folder results", async () => {
+    const execFile = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify({
+        results: [{ name: "QQ", path: "D:\\", attributes: 16 }]
+      }),
+      stderr: ""
+    });
+    const startEverything = vi.fn();
+    const getFileIcon = vi.fn().mockResolvedValue("data:image/png;base64,abc");
+
+    const response = await searchEverything("qq", { execFile, startEverything, getFileIcon });
+
+    expect(getFileIcon).not.toHaveBeenCalled();
+    expect(response.results[0]?.kind).toBe("folder");
+    expect(response.results[0]).not.toHaveProperty("iconDataUrl");
+  });
+
   it("decodes Chinese paths returned as GB18030 bytes", async () => {
     const stdout = Buffer.from([
       0x43, 0x3a, 0x5c, 0x55, 0x73, 0x65, 0x72, 0x73, 0x5c, 0x62, 0x66, 0x73, 0x5c,
@@ -130,14 +242,14 @@ describe("searchEverything", () => {
     const execFile = vi
       .fn()
       .mockRejectedValueOnce(new Error("Error 8: Everything IPC not found"))
-      .mockResolvedValueOnce({ stdout: "D:\\again.txt\r\n", stderr: "" });
+      .mockResolvedValueOnce({ stdout: "D:\\aaaa.txt\r\n", stderr: "" });
     const startEverything = vi.fn().mockResolvedValue(undefined);
 
-    const response = await searchEverything("again", { execFile, startEverything });
+    const response = await searchEverything("aaaa", { execFile, startEverything });
 
     expect(startEverything).toHaveBeenCalledOnce();
     expect(execFile).toHaveBeenCalledTimes(2);
-    expect(response.results[0]?.name).toBe("again.txt");
+    expect(response.results[0]?.name).toBe("aaaa.txt");
   });
 
   it("returns a short error when the command fails after retry", async () => {

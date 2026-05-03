@@ -16,6 +16,7 @@
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^36.0.0",
+    "pinyin-pro": "^3.28.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "uiohook-napi": "^1.5.4",
@@ -44,4 +45,3 @@
     }
   }
 }
-

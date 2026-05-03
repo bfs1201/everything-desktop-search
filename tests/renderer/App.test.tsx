@@ -132,6 +132,30 @@ describe("App", () => {
     expect(await screen.findByAltText("Weixin.exe 图标")).toHaveAttribute("src", "data:image/png;base64,abc");
   });
 
+  it("文件夹结果固定渲染文件夹图标", async () => {
+    api.search.mockResolvedValue({
+      results: [
+        {
+          id: "D:\\QQ",
+          name: "QQ",
+          path: "D:\\QQ",
+          directory: "D:\\",
+          kind: "folder",
+          iconDataUrl: "data:image/png;base64,wrong"
+        }
+      ]
+    });
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
+      target: { value: "qq" }
+    });
+
+    expect(await screen.findByText("QQ")).toBeInTheDocument();
+    expect(screen.queryByAltText("QQ 图标")).not.toBeInTheDocument();
+    expect(document.querySelector(".folderIcon")).toBeInTheDocument();
+  });
+
   it("点击结果项会直接打开目标并隐藏窗口", async () => {
     render(<App />);
 

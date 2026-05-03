@@ -21,19 +21,20 @@ function positionWindow(window: BrowserWindow, expanded = false) {
   });
 }
 
-function toggleWindow() {
+function showAndFocusWindow() {
   if (!mainWindow) {
     return;
   }
 
-  if (mainWindow.isVisible()) {
-    mainWindow.hide();
-    return;
-  }
-
   positionWindow(mainWindow, false);
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.setAlwaysOnTop(true);
   mainWindow.show();
+  mainWindow.moveTop();
   mainWindow.focus();
+  mainWindow.webContents.focus();
   mainWindow.webContents.send("window-shown");
 }
 
@@ -53,7 +54,9 @@ async function createWindow() {
     }
   });
   mainWindow.on("blur", () => {
-    mainWindow?.hide();
+    if (mainWindow) {
+      mainWindow.hide();
+    }
   });
 
   await mainWindow.loadFile(path.join(app.getAppPath(), "dist/renderer/index.html"));
@@ -70,7 +73,7 @@ function registerKeyboardHook() {
   const detector = createDoubleCtrlDetector();
   uIOhook.on("keydown", (event) => {
     if (detector.keyDown(keyNameFromCode(event.keycode), Date.now())) {
-      toggleWindow();
+      showAndFocusWindow();
     }
   });
   uIOhook.on("keyup", (event) => {

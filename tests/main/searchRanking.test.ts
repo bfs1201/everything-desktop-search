@@ -32,13 +32,25 @@ describe("rankSearchResults", () => {
     expect(ranked[0]?.kind).toBe("app");
   });
 
-  it("scores Chinese names through pinyin aliases", () => {
+  it("scores Chinese names through full pinyin aliases", () => {
     const ranked = rankSearchResults(
       [
         result("D:\\Images\\weixin.png"),
         result("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk")
       ],
       parseSearchQuery("weixin")
+    );
+
+    expect(ranked[0]?.path).toBe("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk");
+  });
+
+  it("scores Chinese names through pinyin initials", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Images\\wx.png"),
+        result("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk")
+      ],
+      parseSearchQuery("wx")
     );
 
     expect(ranked[0]?.path).toBe("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk");

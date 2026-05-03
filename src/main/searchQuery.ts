@@ -21,6 +21,8 @@ const EXTENSION_FILTERS: Record<Exclude<SearchFilter, "folder" | "file" | undefi
   audio: "ext:mp3;wav;flac;aac;m4a;ogg"
 };
 
+const STRUCTURED_OUTPUT_ARGS = ["-json", "-attributes"];
+
 function isPathTerm(term: string) {
   return term.includes("\\") || /^[a-zA-Z]:\\?$/.test(term);
 }
@@ -76,8 +78,8 @@ function formatEverythingTerm(term: string) {
   return expandedTerms.length > 1 ? `<${expandedTerms.join("|")}>` : term;
 }
 
-export function buildEverythingArgs(query: ParsedSearchQuery, limit = 200): string[] {
-  const args = ["-n", String(limit)];
+function appendFilters(args: string[], query: ParsedSearchQuery) {
+  args.push(...STRUCTURED_OUTPUT_ARGS);
 
   if (query.filter === "folder") {
     args.push("/ad");
@@ -88,6 +90,31 @@ export function buildEverythingArgs(query: ParsedSearchQuery, limit = 200): stri
   if (query.filter && query.filter in EXTENSION_FILTERS) {
     args.push(EXTENSION_FILTERS[query.filter as keyof typeof EXTENSION_FILTERS]);
   }
+}
+
+export function isPinyinCandidateQuery(query: ParsedSearchQuery): boolean {
+  if (query.pathTerms.length > 0 || query.keywords.length !== 1) {
+    return false;
+  }
+
+  const keyword = query.keywords[0];
+  if (!keyword || /[^\x00-\x7F]/.test(keyword) || !/^[a-zA-Z]{2,}$/.test(keyword)) {
+    return false;
+  }
+
+  return new Set(keyword.toLowerCase()).size > 1;
+}
+
+export function buildChineseCandidateArgs(query: ParsedSearchQuery, limit = 300): string[] {
+  const args = ["-n", String(limit)];
+  appendFilters(args, query);
+  args.push("regex:[一-龥]");
+  return args;
+}
+
+export function buildEverythingArgs(query: ParsedSearchQuery, limit = 200): string[] {
+  const args = ["-n", String(limit)];
+  appendFilters(args, query);
 
   args.push(...query.pathTerms);
   args.push(...query.keywords.filter((keyword) => !query.pathTerms.includes(keyword)).map(formatEverythingTerm));

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildEverythingArgs, expandSearchTerm, parseSearchQuery } from "../../src/main/searchQuery";
+import {
+  buildChineseCandidateArgs,
+  buildEverythingArgs,
+  expandSearchTerm,
+  isPinyinCandidateQuery,
+  parseSearchQuery
+} from "../../src/main/searchQuery";
 
 describe("parseSearchQuery", () => {
   it("parses folder filter", () => {
@@ -34,17 +40,33 @@ describe("parseSearchQuery", () => {
 
 describe("buildEverythingArgs", () => {
   it("adds Everything folder-only flag for folder filter", () => {
-    expect(buildEverythingArgs(parseSearchQuery("folder: qq"))).toEqual(["-n", "200", "/ad", "qq"]);
+    expect(buildEverythingArgs(parseSearchQuery("folder: qq"))).toEqual([
+      "-n",
+      "200",
+      "-json",
+      "-attributes",
+      "/ad",
+      "qq"
+    ]);
   });
 
   it("adds Everything file-only flag for file filter", () => {
-    expect(buildEverythingArgs(parseSearchQuery("file: qq"))).toEqual(["-n", "200", "/a-d", "qq"]);
+    expect(buildEverythingArgs(parseSearchQuery("file: qq"))).toEqual([
+      "-n",
+      "200",
+      "-json",
+      "-attributes",
+      "/a-d",
+      "qq"
+    ]);
   });
 
   it("adds extension filters for document filter", () => {
     expect(buildEverythingArgs(parseSearchQuery("doc: 毕业"))).toEqual([
       "-n",
       "200",
+      "-json",
+      "-attributes",
       "ext:doc;docx;pdf;txt;md;xls;xlsx;ppt;pptx",
       "毕业"
     ]);
@@ -54,6 +76,8 @@ describe("buildEverythingArgs", () => {
     expect(buildEverythingArgs(parseSearchQuery("desktop\\毕业 d:\\"))).toEqual([
       "-n",
       "200",
+      "-json",
+      "-attributes",
       "desktop\\",
       "d:\\",
       "毕业"
@@ -62,6 +86,24 @@ describe("buildEverythingArgs", () => {
 
   it("expands pinyin aliases into an Everything OR query", () => {
     expect(expandSearchTerm("weixin")).toEqual(["weixin", "微信"]);
-    expect(buildEverythingArgs(parseSearchQuery("weixin"))).toEqual(["-n", "200", "<weixin|微信>"]);
+    expect(buildEverythingArgs(parseSearchQuery("weixin"))).toEqual([
+      "-n",
+      "200",
+      "-json",
+      "-attributes",
+      "<weixin|微信>"
+    ]);
+  });
+
+  it("builds a bounded Chinese candidate query for pinyin-like input", () => {
+    const query = parseSearchQuery("weixin");
+
+    expect(isPinyinCandidateQuery(query)).toBe(true);
+    expect(buildChineseCandidateArgs(query, 300)).toEqual(["-n", "300", "-json", "-attributes", "regex:[一-龥]"]);
+  });
+
+  it("does not run pinyin candidate search for Chinese or path queries", () => {
+    expect(isPinyinCandidateQuery(parseSearchQuery("微信"))).toBe(false);
+    expect(isPinyinCandidateQuery(parseSearchQuery("D:\\weixin"))).toBe(false);
   });
 });

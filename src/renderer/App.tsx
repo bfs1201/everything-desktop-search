@@ -16,7 +16,11 @@ function useDebouncedValue(value: string, delayMs: number) {
 }
 
 function resultIconClass(result: SearchResult) {
-  return result.name.includes(".") ? "resultIcon fileIcon" : "resultIcon folderIcon";
+  return result.kind === "folder" ? "resultIcon folderIcon" : "resultIcon fileIcon";
+}
+
+function shouldRenderRealIcon(result: SearchResult) {
+  return Boolean(result.iconDataUrl && result.kind !== "folder");
 }
 
 function openResult(result: SearchResult) {
@@ -188,7 +192,7 @@ export default function App() {
                 onMouseEnter={() => selectIndex(index)}
                 onClick={() => openResult(result)}
               >
-                {result.iconDataUrl ? (
+                {shouldRenderRealIcon(result) ? (
                   <img className="resultIcon realIcon" src={result.iconDataUrl} alt={`${result.name} 图标`} />
                 ) : (
                   <div className={resultIconClass(result)} aria-hidden="true" />

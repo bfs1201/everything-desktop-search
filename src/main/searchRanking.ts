@@ -1,4 +1,5 @@
 import path from "node:path";
+import { pinyin } from "pinyin-pro";
 import type { SearchResult } from "../shared/searchTypes.js";
 import { expandSearchTerm, type ParsedSearchQuery } from "./searchQuery.js";
 
@@ -32,12 +33,42 @@ function nameWithoutExtension(fileName: string) {
   return extension ? fileName.slice(0, -extension.length) : fileName;
 }
 
+function containsChinese(value: string) {
+  return /[\u4e00-\u9fff]/.test(value);
+}
+
+function pinyinForms(value: string) {
+  if (!containsChinese(value)) {
+    return [];
+  }
+
+  const syllables = pinyin(value, { toneType: "none", type: "array" }) as string[];
+  const full = syllables.join("").toLowerCase();
+  const initials = syllables.map((item) => item[0] ?? "").join("").toLowerCase();
+  return [full, initials].filter(Boolean);
+}
+
+function scorePinyinName(result: SearchResult, keyword: string) {
+  const normalizedKeyword = normalize(keyword);
+  const forms = pinyinForms(nameWithoutExtension(result.name));
+
+  if (forms.includes(normalizedKeyword)) {
+    return 1000;
+  }
+
+  if (forms.some((form) => form.startsWith(normalizedKeyword))) {
+    return 760;
+  }
+
+  return forms.some((form) => form.includes(normalizedKeyword)) ? 520 : 0;
+}
+
 function scoreKeyword(result: SearchResult, keyword: string) {
   const normalizedName = normalize(result.name);
   const normalizedStem = normalize(nameWithoutExtension(result.name));
   const normalizedPath = normalize(result.path);
 
-  return Math.max(
+  const textScore = Math.max(
     ...expandSearchTerm(keyword).map((term) => {
       const normalizedKeyword = normalize(term);
 
@@ -60,6 +91,8 @@ function scoreKeyword(result: SearchResult, keyword: string) {
       return 0;
     })
   );
+
+  return Math.max(textScore, scorePinyinName(result, keyword));
 }
 
 function scorePathTerms(result: SearchResult, pathTerms: string[]) {
