@@ -17,6 +17,9 @@ const api = {
   hideWindow(): Promise<void> {
     return ipcRenderer.invoke("hide-window");
   },
+  setExpanded(expanded: boolean): Promise<void> {
+    return ipcRenderer.invoke("set-expanded", expanded);
+  },
   onWindowShown(callback: () => void) {
     ipcRenderer.on("window-shown", callback);
   }

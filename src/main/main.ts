@@ -5,14 +5,18 @@ import { createDoubleCtrlDetector } from "./hotkeyDetector.js";
 import { registerIpc } from "./ipc.js";
 
 let mainWindow: BrowserWindow | null = null;
+const WINDOW_WIDTH = 720;
+const COMPACT_HEIGHT = 104;
+const EXPANDED_HEIGHT = 560;
 
-function positionWindow(window: BrowserWindow) {
+function positionWindow(window: BrowserWindow, expanded = false) {
   const display = screen.getPrimaryDisplay();
   const { width } = display.workAreaSize;
+  const height = expanded ? EXPANDED_HEIGHT : COMPACT_HEIGHT;
   window.setBounds({
-    width: 720,
-    height: 420,
-    x: Math.round((width - 720) / 2),
+    width: WINDOW_WIDTH,
+    height,
+    x: Math.round((width - WINDOW_WIDTH) / 2),
     y: 120
   });
 }
@@ -27,7 +31,7 @@ function toggleWindow() {
     return;
   }
 
-  positionWindow(mainWindow);
+  positionWindow(mainWindow, false);
   mainWindow.show();
   mainWindow.focus();
   mainWindow.webContents.send("window-shown");
@@ -35,8 +39,8 @@ function toggleWindow() {
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 720,
-    height: 420,
+    width: WINDOW_WIDTH,
+    height: COMPACT_HEIGHT,
     show: false,
     frame: false,
     resizable: false,
@@ -47,6 +51,9 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false
     }
+  });
+  mainWindow.on("blur", () => {
+    mainWindow?.hide();
   });
 
   await mainWindow.loadFile(path.join(app.getAppPath(), "dist/renderer/index.html"));

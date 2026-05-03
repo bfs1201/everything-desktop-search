@@ -14,4 +14,13 @@ export function registerIpc() {
   ipcMain.handle("reveal-path", (_event, filePath: string) => fileActions.reveal(filePath));
   ipcMain.handle("copy-path", (_event, filePath: string) => fileActions.copyPath(filePath));
   ipcMain.handle("hide-window", (event) => BrowserWindow.fromWebContents(event.sender)?.hide());
+  ipcMain.handle("set-expanded", (event, expanded: boolean) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      return;
+    }
+
+    const bounds = window.getBounds();
+    window.setBounds({ ...bounds, height: expanded ? 560 : 104 });
+  });
 }
