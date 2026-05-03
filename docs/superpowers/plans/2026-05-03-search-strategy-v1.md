@@ -21,47 +21,47 @@
 
 ## 任务 1：查询解析
 
-- [ ] 写失败测试：`folder: qq` 生成 `/ad`，`file: qq` 生成 `/a-d`，`doc: 毕业` 生成扩展名过滤，`desktop\毕业` 保留路径约束。
-- [ ] 实现 `src/main/searchQuery.ts`。
-- [ ] 运行 `npm test -- tests/main/searchQuery.test.ts`，确认通过。
-- [ ] 提交：`feat: add search query parser`
+- [x] 写失败测试：`folder: qq` 生成 `/ad`，`file: qq` 生成 `/a-d`，`doc: 毕业` 生成扩展名过滤，`desktop\毕业` 保留路径约束。
+- [x] 实现 `src/main/searchQuery.ts`。
+- [x] 运行 `npm test -- tests/main/searchQuery.test.ts`，确认通过。
+- [x] 提交：`feat: add search query parser`
 
 ## 任务 2：排序策略
 
-- [ ] 写失败测试：文件名精确匹配高于前缀匹配，前缀匹配高于包含匹配，路径命中低于文件名命中。
-- [ ] 写失败测试：最近打开和打开次数高的结果加分，`node_modules`、回收站、临时目录结果降权。
-- [ ] 实现 `src/main/searchRanking.ts`。
-- [ ] 运行 `npm test -- tests/main/searchRanking.test.ts`，确认通过。
-- [ ] 提交：`feat: rank search results`
+- [x] 写失败测试：文件名精确匹配高于前缀匹配，前缀匹配高于包含匹配，路径命中低于文件名命中。
+- [x] 写失败测试：最近打开和打开次数高的结果加分，`node_modules`、回收站、临时目录结果降权。
+- [x] 实现 `src/main/searchRanking.ts`。
+- [x] 运行 `npm test -- tests/main/searchRanking.test.ts`，确认通过。
+- [x] 提交：`feat: rank search results`
 
 ## 任务 3：使用记录
 
-- [ ] 写失败测试：打开文件后增加 `openCount`，更新 `lastOpenedAt`。
-- [ ] 写失败测试：历史文件不存在或 JSON 损坏时返回空历史。
-- [ ] 实现 `src/main/usageHistory.ts`。
-- [ ] 运行 `npm test -- tests/main/usageHistory.test.ts`，确认通过。
-- [ ] 提交：`feat: track usage history`
+- [x] 写失败测试：打开文件后增加 `openCount`，更新 `lastOpenedAt`。
+- [x] 写失败测试：历史文件不存在或 JSON 损坏时返回空历史。
+- [x] 实现 `src/main/usageHistory.ts`。
+- [x] 运行 `npm test -- tests/main/usageHistory.test.ts`，确认通过。
+- [x] 提交：`feat: track usage history`
 
 ## 任务 4：接入 Everything 搜索
 
-- [ ] 写失败测试：`searchEverything("folder: qq")` 调用 `es.exe` 时包含 `/ad`，`searchEverything("doc: 毕业")` 包含文档扩展名过滤。
-- [ ] 写失败测试：返回结果会按 V1 分数排序。
-- [ ] 修改 `src/main/everythingSearch.ts`，使用 `buildEverythingArgs` 和 `rankSearchResults`。
-- [ ] 修复错误提示中文编码。
-- [ ] 运行 `npm test -- tests/main/everythingSearch.test.ts`，确认通过。
-- [ ] 提交：`feat: apply V1 search strategy`
+- [x] 写失败测试：`searchEverything("folder: qq")` 调用 `es.exe` 时包含 `/ad`，`searchEverything("doc: 毕业")` 包含文档扩展名过滤。
+- [x] 写失败测试：返回结果会按 V1 分数排序。
+- [x] 修改 `src/main/everythingSearch.ts`，使用 `buildEverythingArgs` 和 `rankSearchResults`。
+- [x] 修复错误提示中文编码。
+- [x] 运行 `npm test -- tests/main/everythingSearch.test.ts`，确认通过。
+- [x] 提交：`feat: apply V1 search strategy`
 
 ## 任务 5：打开记录接入
 
-- [ ] 写失败测试：IPC 的 `open-path` 会在成功打开后记录使用历史。
-- [ ] 修改 `src/main/ipc.ts`。
-- [ ] 运行相关测试。
-- [ ] 提交：`feat: record opened search results`
+- [x] 写失败测试：IPC 的 `open-path` 会在成功打开后记录使用历史。
+- [x] 修改 `src/main/ipc.ts`。
+- [x] 运行相关测试。
+- [x] 提交：`feat: record opened search results`
 
 ## 任务 6：最终验证
 
-- [ ] 运行 `npm test`。
-- [ ] 运行 `npm run build`。
+- [x] 运行 `npm test`。
+- [x] 运行 `npm run build`。
 - [ ] 手动验证：
   - `folder: qq` 只出现文件夹。
   - `file: qq` 只出现文件。
