@@ -8,4 +8,10 @@ describe("vite config", () => {
 
     expect(source).toContain('base: "./"');
   });
+
+  it("excludes nested worktrees from test discovery", () => {
+    const source = readFileSync(join(process.cwd(), "vitest.config.ts"), "utf-8");
+
+    expect(source).toContain('".worktrees/**"');
+  });
 });

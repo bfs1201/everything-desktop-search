@@ -29,8 +29,23 @@ export function parseEverythingOutput(output: string): SearchResult[] {
       id: filePath,
       name: path.win32.basename(filePath),
       path: filePath,
-      directory: path.win32.dirname(filePath)
+      directory: path.win32.dirname(filePath),
+      kind: classifySearchResult(filePath)
     }));
+}
+
+export function classifySearchResult(filePath: string): SearchResult["kind"] {
+  const normalizedPath = filePath.toLowerCase();
+  const extension = path.win32.extname(filePath).toLowerCase();
+  const isShortcut = extension === ".lnk";
+  const isStartMenu = normalizedPath.includes("\\start menu\\programs\\");
+  const isDesktop = normalizedPath.includes("\\desktop\\");
+
+  if ((isShortcut && (isStartMenu || isDesktop)) || extension === ".exe") {
+    return "app";
+  }
+
+  return extension ? "file" : "folder";
 }
 
 export function decodeEverythingOutput(output: ProcessOutput): string {

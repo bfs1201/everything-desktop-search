@@ -14,6 +14,24 @@ function result(filePath: string): SearchResult {
 }
 
 describe("rankSearchResults", () => {
+  it("prefers start menu application shortcuts over same-name folders", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\QQ"),
+        result("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\QQ.lnk"),
+        result("C:\\Program Files\\Tencent\\QQ\\QQ.exe")
+      ],
+      parseSearchQuery("qq")
+    );
+
+    expect(ranked.map((item) => item.path)).toEqual([
+      "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\QQ.lnk",
+      "C:\\Program Files\\Tencent\\QQ\\QQ.exe",
+      "D:\\QQ"
+    ]);
+    expect(ranked[0]?.kind).toBe("app");
+  });
+
   it("prefers exact filename match over prefix, contains, and path-only matches", () => {
     const ranked = rankSearchResults(
       [

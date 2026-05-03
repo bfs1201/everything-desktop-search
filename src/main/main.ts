@@ -69,9 +69,12 @@ function keyNameFromCode(keycode: number): string {
 function registerKeyboardHook() {
   const detector = createDoubleCtrlDetector();
   uIOhook.on("keydown", (event) => {
-    if (detector.record(keyNameFromCode(event.keycode), Date.now())) {
+    if (detector.keyDown(keyNameFromCode(event.keycode), Date.now())) {
       toggleWindow();
     }
+  });
+  uIOhook.on("keyup", (event) => {
+    detector.keyUp(keyNameFromCode(event.keycode));
   });
   uIOhook.start();
 }

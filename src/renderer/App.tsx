@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SearchResult } from "../shared/searchTypes";
 import "./styles.css";
 
@@ -27,16 +27,29 @@ export default function App() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const selectedIndexRef = useRef(0);
+  const resultsRef = useRef<SearchResult[]>([]);
   const debouncedQuery = useDebouncedValue(query, 120);
   const hasQuery = Boolean(query.trim());
   const visibleResults = results.slice(0, visibleCount);
-  const selected = useMemo(() => results[selectedIndex], [results, selectedIndex]);
   const hasMore = visibleCount < results.length;
+
+  function selectIndex(index: number) {
+    selectedIndexRef.current = index;
+    setSelectedIndex(index);
+  }
 
   useEffect(() => {
     window.everythingSearch.onWindowShown(() => {
+      setQuery("");
+      setResults([]);
+      resultsRef.current = [];
+      setVisibleCount(PAGE_SIZE);
+      selectIndex(0);
+      setError("");
+      setIsLoading(false);
       inputRef.current?.focus();
-      inputRef.current?.select();
     });
   }, []);
 
@@ -50,8 +63,9 @@ export default function App() {
     async function runSearch() {
       if (!debouncedQuery.trim()) {
         setResults([]);
+        resultsRef.current = [];
         setVisibleCount(PAGE_SIZE);
-        setSelectedIndex(0);
+        selectIndex(0);
         setError("");
         setIsLoading(false);
         return;
@@ -62,9 +76,10 @@ export default function App() {
       if (!active) {
         return;
       }
+      resultsRef.current = response.results;
       setResults(response.results);
       setVisibleCount(PAGE_SIZE);
-      setSelectedIndex(0);
+      selectIndex(0);
       setError(response.error ?? "");
       setIsLoading(false);
     }
@@ -79,7 +94,7 @@ export default function App() {
     function onKeyDown(event: KeyboardEvent) {
       const number = Number(event.key);
       if (event.ctrlKey && Number.isInteger(number) && number >= 1 && number <= 8) {
-        const result = visibleResults[number - 1];
+        const result = resultsRef.current[number - 1];
         if (result) {
           event.preventDefault();
           window.everythingSearch.openPath(result.path);
@@ -96,30 +111,37 @@ export default function App() {
       }
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setSelectedIndex((index) => Math.min(index + 1, Math.max(results.length - 1, 0)));
+        const nextIndex = Math.min(selectedIndexRef.current + 1, Math.max(resultsRef.current.length - 1, 0));
+        setVisibleCount((count) => Math.max(count, Math.min(nextIndex + 1, resultsRef.current.length)));
+        selectIndex(nextIndex);
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setSelectedIndex((index) => Math.max(index - 1, 0));
+        selectIndex(Math.max(selectedIndexRef.current - 1, 0));
       }
-      if (event.key === "Enter" && selected) {
+      const activeSelected = resultsRef.current[selectedIndexRef.current];
+      if (event.key === "Enter" && activeSelected) {
         event.preventDefault();
         if (event.altKey) {
-          window.everythingSearch.revealPath(selected.path);
+          window.everythingSearch.revealPath(activeSelected.path);
         } else {
-          window.everythingSearch.openPath(selected.path);
+          window.everythingSearch.openPath(activeSelected.path);
           window.everythingSearch.hideWindow();
         }
       }
-      if (event.key.toLowerCase() === "c" && event.ctrlKey && selected) {
+      if (event.key.toLowerCase() === "c" && event.ctrlKey && activeSelected) {
         event.preventDefault();
-        window.everythingSearch.copyPath(selected.path);
+        window.everythingSearch.copyPath(activeSelected.path);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hasMore, results.length, selected, visibleResults]);
+  }, [hasMore, results, visibleResults]);
+
+  useEffect(() => {
+    resultRefs.current[selectedIndex]?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedIndex, visibleCount]);
 
   function loadNextPage() {
     setVisibleCount((count) => Math.min(count + PAGE_SIZE, results.length));
@@ -155,8 +177,12 @@ export default function App() {
               <div
                 className={index === selectedIndex ? "result selected" : "result"}
                 key={result.id}
+                ref={(node) => {
+                  resultRefs.current[index] = node;
+                }}
                 role="option"
                 aria-selected={index === selectedIndex}
+                onMouseEnter={() => selectIndex(index)}
               >
                 <div className={resultIconClass(result)} aria-hidden="true" />
                 <div className="resultText">

@@ -18,6 +18,11 @@ const NOISY_PATH_PENALTIES = [
   { pattern: "\\temp\\", penalty: 160 }
 ];
 
+const APP_PATH_BONUSES = [
+  { pattern: "\\start menu\\programs\\", bonus: 500 },
+  { pattern: "\\desktop\\", bonus: 360 }
+];
+
 function normalize(value: string) {
   return value.toLowerCase();
 }
@@ -78,6 +83,37 @@ function scoreNoise(result: SearchResult) {
   }, 0);
 }
 
+function inferredKind(result: SearchResult): SearchResult["kind"] {
+  if (result.kind) {
+    return result.kind;
+  }
+
+  const extension = path.win32.extname(result.path).toLowerCase();
+  const normalizedPath = normalize(result.path);
+  const isShortcut = extension === ".lnk";
+  const isStartMenu = normalizedPath.includes("\\start menu\\programs\\");
+  const isDesktop = normalizedPath.includes("\\desktop\\");
+
+  if ((isShortcut && (isStartMenu || isDesktop)) || extension === ".exe") {
+    return "app";
+  }
+
+  return extension ? "file" : "folder";
+}
+
+function scoreKind(result: SearchResult) {
+  const kind = inferredKind(result);
+  const normalizedPath = normalize(result.path);
+
+  if (kind !== "app") {
+    return kind === "file" ? 80 : 0;
+  }
+
+  return APP_PATH_BONUSES.reduce((score, item) => {
+    return normalizedPath.includes(item.pattern) ? score + item.bonus : score;
+  }, 120);
+}
+
 export function scoreSearchResult(
   result: SearchResult,
   query: ParsedSearchQuery,
@@ -85,7 +121,13 @@ export function scoreSearchResult(
   now = Date.now()
 ) {
   const keywordScore = query.keywords.reduce((score, keyword) => score + scoreKeyword(result, keyword), 0);
-  return keywordScore + scorePathTerms(result, query.pathTerms) + scoreUsage(usageHistory[result.path], now) + scoreNoise(result);
+  return (
+    keywordScore +
+    scoreKind(result) +
+    scorePathTerms(result, query.pathTerms) +
+    scoreUsage(usageHistory[result.path], now) +
+    scoreNoise(result)
+  );
 }
 
 export function rankSearchResults(
@@ -94,14 +136,20 @@ export function rankSearchResults(
   usageHistory: UsageHistory = {},
   now = Date.now()
 ) {
-  return [...results].sort((left, right) => {
-    const scoreDiff =
-      scoreSearchResult(right, query, usageHistory, now) - scoreSearchResult(left, query, usageHistory, now);
+  return results
+    .map((result) => ({
+      ...result,
+      kind: inferredKind(result)
+    }))
+    .sort((left, right) => {
+    const leftScore = scoreSearchResult(left, query, usageHistory, now);
+    const rightScore = scoreSearchResult(right, query, usageHistory, now);
+    const scoreDiff = rightScore - leftScore;
 
     if (scoreDiff !== 0) {
       return scoreDiff;
     }
 
-    return left.name.localeCompare(right.name, "zh-Hans");
+    return left.path.localeCompare(right.path, "zh-Hans");
   });
 }

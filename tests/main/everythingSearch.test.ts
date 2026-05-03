@@ -24,13 +24,15 @@ describe("parseEverythingOutput", () => {
         id: "D:\\Everything\\Everything.exe",
         name: "Everything.exe",
         path: "D:\\Everything\\Everything.exe",
-        directory: "D:\\Everything"
+        directory: "D:\\Everything",
+        kind: "app"
       },
       {
         id: "C:\\Users\\bfs\\Desktop\\notes.md",
         name: "notes.md",
         path: "C:\\Users\\bfs\\Desktop\\notes.md",
-        directory: "C:\\Users\\bfs\\Desktop"
+        directory: "C:\\Users\\bfs\\Desktop",
+        kind: "file"
       }
     ]);
   });
