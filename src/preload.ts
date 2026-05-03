@@ -14,6 +14,9 @@ const api = {
   copyPath(filePath: string): Promise<void> {
     return ipcRenderer.invoke("copy-path", filePath);
   },
+  hideWindow(): Promise<void> {
+    return ipcRenderer.invoke("hide-window");
+  },
   onWindowShown(callback: () => void) {
     ipcRenderer.on("window-shown", callback);
   }
@@ -22,4 +25,3 @@ const api = {
 contextBridge.exposeInMainWorld("everythingSearch", api);
 
 export type EverythingSearchApi = typeof api;
-

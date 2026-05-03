@@ -54,6 +54,10 @@ export default function App() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        window.everythingSearch.hideWindow();
+      }
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setSelectedIndex((index) => Math.min(index + 1, Math.max(results.length - 1, 0)));
@@ -68,6 +72,7 @@ export default function App() {
           window.everythingSearch.revealPath(selected.path);
         } else {
           window.everythingSearch.openPath(selected.path);
+          window.everythingSearch.hideWindow();
         }
       }
       if (event.key.toLowerCase() === "c" && event.ctrlKey && selected) {
@@ -125,4 +130,3 @@ export default function App() {
     </main>
   );
 }
-

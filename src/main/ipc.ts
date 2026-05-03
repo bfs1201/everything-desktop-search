@@ -1,4 +1,4 @@
-import { clipboard, ipcMain, shell } from "electron";
+import { BrowserWindow, clipboard, ipcMain, shell } from "electron";
 import { searchEverything } from "./everythingSearch.js";
 import { createFileActions } from "./fileActions.js";
 
@@ -13,5 +13,5 @@ export function registerIpc() {
   ipcMain.handle("open-path", async (_event, filePath: string) => fileActions.open(filePath));
   ipcMain.handle("reveal-path", (_event, filePath: string) => fileActions.reveal(filePath));
   ipcMain.handle("copy-path", (_event, filePath: string) => fileActions.copyPath(filePath));
+  ipcMain.handle("hide-window", (event) => BrowserWindow.fromWebContents(event.sender)?.hide());
 }
-

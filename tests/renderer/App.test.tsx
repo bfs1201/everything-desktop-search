@@ -7,6 +7,7 @@ const api = {
   openPath: vi.fn(),
   revealPath: vi.fn(),
   copyPath: vi.fn(),
+  hideWindow: vi.fn(),
   onWindowShown: vi.fn()
 };
 
@@ -44,6 +45,7 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "Enter" });
 
     expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.hideWindow).toHaveBeenCalledOnce();
   });
 
   it("moves selection with arrow keys", async () => {
@@ -81,5 +83,14 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "c", ctrlKey: true });
 
     expect(api.copyPath).toHaveBeenCalledWith("D:\\a.txt");
+  });
+
+  it("hides the window with Escape", async () => {
+    render(<App />);
+    await waitFor(() => expect(api.search).toHaveBeenCalledWith(""));
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(api.hideWindow).toHaveBeenCalledOnce();
   });
 });
