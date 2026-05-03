@@ -18,4 +18,12 @@ describe("window behavior", () => {
     expect(mainSource).toContain("EXPANDED_HEIGHT");
     expect(ipcSource).toContain('"set-expanded"');
   });
+
+  it("IPC 搜索和打开共用使用记录文件", () => {
+    const ipcSource = readFileSync(join(process.cwd(), "src/main/ipc.ts"), "utf-8");
+
+    expect(ipcSource).toContain("getUsageHistoryPath");
+    expect(ipcSource).toContain("loadUsageHistory");
+    expect(ipcSource).toContain("recordOpenedPath");
+  });
 });

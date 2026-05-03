@@ -13,6 +13,30 @@ describe("createFileActions", () => {
     expect(openPath).toHaveBeenCalledWith("D:\\file.txt");
   });
 
+  it("records usage after a path opens successfully", async () => {
+    const openPath = vi.fn().mockResolvedValue("");
+    const showItemInFolder = vi.fn();
+    const writeText = vi.fn();
+    const recordOpenedPath = vi.fn().mockResolvedValue(undefined);
+    const actions = createFileActions({ openPath, showItemInFolder, writeText, recordOpenedPath });
+
+    await actions.open("D:\\file.txt");
+
+    expect(recordOpenedPath).toHaveBeenCalledWith("D:\\file.txt");
+  });
+
+  it("does not record usage when opening a path fails", async () => {
+    const openPath = vi.fn().mockResolvedValue("failed");
+    const showItemInFolder = vi.fn();
+    const writeText = vi.fn();
+    const recordOpenedPath = vi.fn();
+    const actions = createFileActions({ openPath, showItemInFolder, writeText, recordOpenedPath });
+
+    await actions.open("D:\\file.txt");
+
+    expect(recordOpenedPath).not.toHaveBeenCalled();
+  });
+
   it("reveals the selected file path", () => {
     const openPath = vi.fn();
     const showItemInFolder = vi.fn();

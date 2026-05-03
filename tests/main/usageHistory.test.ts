@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadUsageHistory, recordOpenedPath } from "../../src/main/usageHistory";
+import { getUsageHistoryPath, loadUsageHistory, recordOpenedPath } from "../../src/main/usageHistory";
 
 let tempDir: string;
 let historyPath: string;
@@ -17,6 +17,12 @@ afterEach(async () => {
 });
 
 describe("usage history", () => {
+  it("stores usage history under Electron user data", () => {
+    expect(getUsageHistoryPath("C:\\Users\\bfs\\AppData\\Roaming\\EverythingDesktopSearch")).toBe(
+      "C:\\Users\\bfs\\AppData\\Roaming\\EverythingDesktopSearch\\usage-history.json"
+    );
+  });
+
   it("returns empty history when the file does not exist", async () => {
     await expect(loadUsageHistory(historyPath)).resolves.toEqual({});
   });

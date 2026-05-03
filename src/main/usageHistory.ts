@@ -2,6 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { UsageHistory } from "./searchRanking.js";
 
+export function getUsageHistoryPath(userDataPath: string) {
+  return path.win32.join(userDataPath, "usage-history.json");
+}
+
 function isUsageHistory(value: unknown): value is UsageHistory {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;

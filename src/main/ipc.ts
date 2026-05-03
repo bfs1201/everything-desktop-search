@@ -1,15 +1,23 @@
-import { BrowserWindow, clipboard, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
 import { searchEverything } from "./everythingSearch.js";
 import { createFileActions } from "./fileActions.js";
+import { getUsageHistoryPath, loadUsageHistory, recordOpenedPath } from "./usageHistory.js";
+
+const historyPath = getUsageHistoryPath(app.getPath("userData"));
 
 const fileActions = createFileActions({
   openPath: shell.openPath,
   showItemInFolder: shell.showItemInFolder,
-  writeText: clipboard.writeText
+  writeText: clipboard.writeText,
+  recordOpenedPath: (filePath) => recordOpenedPath(filePath, historyPath)
 });
 
 export function registerIpc() {
-  ipcMain.handle("search", (_event, query: string) => searchEverything(query));
+  ipcMain.handle("search", (_event, query: string) =>
+    searchEverything(query, {
+      loadUsageHistory: () => loadUsageHistory(historyPath)
+    })
+  );
   ipcMain.handle("open-path", async (_event, filePath: string) => fileActions.open(filePath));
   ipcMain.handle("reveal-path", (_event, filePath: string) => fileActions.reveal(filePath));
   ipcMain.handle("copy-path", (_event, filePath: string) => fileActions.copyPath(filePath));
