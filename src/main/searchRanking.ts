@@ -120,6 +120,16 @@ function scoreUsage(stats: UsageStats | undefined, now: number) {
   return openCountScore + recentScore;
 }
 
+function scoreRunMetadata(result: SearchResult, now: number) {
+  const runCountScore = Math.min(result.runCount ?? 0, 20) * 12;
+  if (!result.dateRun) {
+    return runCountScore;
+  }
+
+  const ageInDays = Math.max(0, (now - result.dateRun) / DAY_MS);
+  return runCountScore + Math.max(0, 260 - ageInDays * 26);
+}
+
 function scoreNoise(result: SearchResult) {
   const normalizedPath = normalize(`\\${result.path}`);
   return NOISY_PATH_PENALTIES.reduce((penalty, item) => {
@@ -199,6 +209,7 @@ export function scoreSearchResult(
     scoreKind(result) +
     scorePathTerms(result, query.pathTerms) +
     scoreUsage(usageHistory[result.path], now) +
+    scoreRunMetadata(result, now) +
     scoreNoise(result)
   );
 }
@@ -208,7 +219,31 @@ function sortableSize(result: SearchResult) {
 }
 
 function isFileSearchIntent(query: ParsedSearchQuery) {
-  return Boolean(query.filter) || query.pathTerms.length > 0;
+  return query.mode === "files" || Boolean(query.filter) || query.pathTerms.length > 0;
+}
+
+function defaultSearchSection(result: SearchResult, usageHistory: UsageHistory): SearchResult["section"] {
+  if (usageHistory[result.path]) {
+    return "history";
+  }
+
+  if (inferredKind(result) === "app") {
+    return "apps";
+  }
+
+  return "files";
+}
+
+function sectionRank(section: SearchResult["section"]) {
+  if (section === "history") {
+    return 0;
+  }
+
+  if (section === "apps") {
+    return 1;
+  }
+
+  return 2;
 }
 
 export function rankSearchResults(
@@ -222,13 +257,26 @@ export function rankSearchResults(
   return results
     .map((result) => ({
       ...result,
-      kind: inferredKind(result)
+      kind: inferredKind(result),
+      section: fileSearchIntent ? undefined : defaultSearchSection(result, usageHistory)
     }))
     .sort((left, right) => {
+      if (query.mode === "recent") {
+        const dateRunDiff = (right.dateRun ?? 0) - (left.dateRun ?? 0);
+        if (dateRunDiff !== 0) {
+          return dateRunDiff;
+        }
+      }
+
       if (fileSearchIntent) {
         const sizeDiff = sortableSize(right) - sortableSize(left);
         if (sizeDiff !== 0) {
           return sizeDiff;
+        }
+      } else {
+        const rankDiff = sectionRank(left.section) - sectionRank(right.section);
+        if (rankDiff !== 0) {
+          return rankDiff;
         }
       }
 

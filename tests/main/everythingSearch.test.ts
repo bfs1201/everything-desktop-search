@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeEverythingOutput, parseEverythingOutput, searchEverything } from "../../src/main/everythingSearch";
+import {
+  decodeEverythingOutput,
+  loadMoreEverything,
+  parseEverythingOutput,
+  searchEverything
+} from "../../src/main/everythingSearch";
 
 describe("decodeEverythingOutput", () => {
   it("decodes GB18030 output from Everything CLI", () => {
@@ -43,6 +48,32 @@ describe("parseEverythingOutput", () => {
         path: "D:\\QQ",
         directory: "D:\\",
         kind: "folder"
+      }
+    ]);
+  });
+
+  it("parses run count and date columns from Everything JSON rows", () => {
+    const output = JSON.stringify({
+      results: [
+        {
+          name: "QQ.exe",
+          path: "D:\\Tools\\QQ",
+          attributes: 32,
+          size: "2048",
+          "run-count": "12",
+          "date-run": "2026-05-03T10:00:00.000Z",
+          "date-modified": "2026-05-02T08:00:00.000Z"
+        }
+      ]
+    });
+
+    expect(parseEverythingOutput(output)).toMatchObject([
+      {
+        name: "QQ.exe",
+        path: "D:\\Tools\\QQ\\QQ.exe",
+        runCount: 12,
+        dateRun: Date.parse("2026-05-03T10:00:00.000Z"),
+        dateModified: Date.parse("2026-05-02T08:00:00.000Z")
       }
     ]);
   });
@@ -115,21 +146,90 @@ describe("searchEverything", () => {
     expect(execFile).not.toHaveBeenCalled();
   });
 
-  it("calls es.exe with a result limit and parses stdout", async () => {
-    const execFile = vi.fn().mockResolvedValue({ stdout: "D:\\file.txt\r\n", stderr: "" });
+  it("runs app candidate and broad searches for default queries", async () => {
+    const execFile = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: "D:\\Everything\\Everything.exe\r\n", stderr: "" })
+      .mockResolvedValueOnce({
+        stdout: Array.from({ length: 60 }, (_, index) => `D:\\file-${index}.txt`).join("\r\n"),
+        stderr: ""
+      });
     const startEverything = vi.fn();
 
     const response = await searchEverything("file", { execFile, startEverything });
 
-    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", [
+    expect(execFile).toHaveBeenNthCalledWith(1, "D:\\Everything\\es.exe", [
       "-n",
-      "200",
+      "40",
       "-json",
       "-attributes",
       "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "ext:exe;lnk",
       "file"
     ]);
-    expect(response.results[0]?.path).toBe("D:\\file.txt");
+    expect(execFile).toHaveBeenNthCalledWith(2, "D:\\Everything\\es.exe", [
+      "-n",
+      "60",
+      "-offset",
+      "0",
+      "-json",
+      "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "file"
+    ]);
+    expect(response).toMatchObject({
+      canLoadMore: true,
+      nextOffset: 60,
+      queryMode: "default"
+    });
+    expect(response.results.map((item) => item.path)).toContain("D:\\file-0.txt");
+  });
+
+  it("loads the next default page with an ES offset and no app candidate query", async () => {
+    const execFile = vi.fn().mockResolvedValue({
+      stdout: Array.from({ length: 60 }, (_, index) => `D:\\more-${index}.txt`).join("\r\n"),
+      stderr: ""
+    });
+
+    const response = await loadMoreEverything("qq", 60, { execFile });
+
+    expect(execFile).toHaveBeenCalledOnce();
+    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", [
+      "-n",
+      "60",
+      "-offset",
+      "60",
+      "-json",
+      "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "qq"
+    ]);
+    expect(response).toMatchObject({
+      canLoadMore: true,
+      nextOffset: 120,
+      queryMode: "default"
+    });
+  });
+
+  it("does not enable ES pagination when fewer than a full default page returns", async () => {
+    const execFile = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "D:\\only-one.txt\r\n", stderr: "" });
+
+    const response = await searchEverything("qq", { execFile });
+
+    expect(response.canLoadMore).toBe(false);
+    expect(response.nextOffset).toBeUndefined();
   });
 
   it("passes folder and document filters to Everything CLI", async () => {
@@ -145,6 +245,9 @@ describe("searchEverything", () => {
       "-json",
       "-attributes",
       "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
       "/ad",
       "qq"
     ]);
@@ -154,6 +257,9 @@ describe("searchEverything", () => {
       "-json",
       "-attributes",
       "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
       "ext:doc;docx;pdf;txt;md;xls;xlsx;ppt;pptx",
       "毕业"
     ]);
@@ -163,6 +269,7 @@ describe("searchEverything", () => {
     const execFile = vi
       .fn()
       .mockResolvedValueOnce({ stdout: "D:\\Images\\weixin.png\r\n", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
       .mockResolvedValueOnce({
         stdout: JSON.stringify({
           results: [{ name: "微信.lnk", path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs", attributes: 32 }]
@@ -173,7 +280,7 @@ describe("searchEverything", () => {
 
     const response = await searchEverything("weixin", { execFile, startEverything });
 
-    expect(execFile).toHaveBeenNthCalledWith(2, "D:\\Everything\\es.exe", [
+    expect(execFile).toHaveBeenNthCalledWith(3, "D:\\Everything\\es.exe", [
       "-n",
       "300",
       "-json",
@@ -186,10 +293,13 @@ describe("searchEverything", () => {
   });
 
   it("sorts returned results with the V1 ranking strategy", async () => {
-    const execFile = vi.fn().mockResolvedValue({
-      stdout: ["D:\\qq\\notes.txt", "D:\\Projects\\my-qq-note.txt", "D:\\Projects\\qq"].join("\r\n"),
-      stderr: ""
-    });
+    const execFile = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({
+        stdout: ["D:\\qq\\notes.txt", "D:\\Projects\\my-qq-note.txt", "D:\\Projects\\qq"].join("\r\n"),
+        stderr: ""
+      });
     const startEverything = vi.fn();
 
     const response = await searchEverything("qq", { execFile, startEverything });
@@ -202,7 +312,11 @@ describe("searchEverything", () => {
   });
 
   it("adds icon data URLs when an icon provider is available", async () => {
-    const execFile = vi.fn().mockResolvedValue({ stdout: "D:\\Weixin\\Weixin.exe\r\n", stderr: "" });
+    const execFile = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: "D:\\Weixin\\Weixin.exe\r\n", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" });
     const startEverything = vi.fn();
     const getFileIcon = vi.fn().mockResolvedValue("data:image/png;base64,abc");
 
@@ -216,12 +330,15 @@ describe("searchEverything", () => {
   });
 
   it("does not request per-path icons for folder results", async () => {
-    const execFile = vi.fn().mockResolvedValue({
-      stdout: JSON.stringify({
-        results: [{ name: "QQ", path: "D:\\", attributes: 16 }]
-      }),
-      stderr: ""
-    });
+    const execFile = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          results: [{ name: "QQ", path: "D:\\", attributes: 16 }]
+        }),
+        stderr: ""
+      });
     const startEverything = vi.fn();
     const getFileIcon = vi.fn().mockResolvedValue("data:image/png;base64,abc");
 
@@ -253,13 +370,14 @@ describe("searchEverything", () => {
     const execFile = vi
       .fn()
       .mockRejectedValueOnce(new Error("Error 8: Everything IPC not found"))
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
       .mockResolvedValueOnce({ stdout: "D:\\aaaa.txt\r\n", stderr: "" });
     const startEverything = vi.fn().mockResolvedValue(undefined);
 
     const response = await searchEverything("aaaa", { execFile, startEverything });
 
     expect(startEverything).toHaveBeenCalledOnce();
-    expect(execFile).toHaveBeenCalledTimes(2);
+    expect(execFile).toHaveBeenCalledTimes(3);
     expect(response.results[0]?.name).toBe("aaaa.txt");
   });
 

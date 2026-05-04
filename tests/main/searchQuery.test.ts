@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildChineseCandidateArgs,
   buildEverythingArgs,
+  buildEverythingMoreArgs,
+  buildEverythingSearches,
   expandSearchTerm,
   isPinyinCandidateQuery,
   parseSearchQuery
@@ -30,11 +32,128 @@ describe("parseSearchQuery", () => {
     });
   });
 
+  it("parses app, recent, path, parent, and excluded terms", () => {
+    expect(parseSearchQuery("app: qq !backup")).toMatchObject({
+      mode: "apps",
+      includeTerms: ["qq"],
+      excludeTerms: ["backup"]
+    });
+    expect(parseSearchQuery("recent: code")).toMatchObject({
+      mode: "recent",
+      includeTerms: ["code"]
+    });
+    expect(parseSearchQuery("path:D:\\Downloads qq")).toMatchObject({
+      mode: "files",
+      pathScope: "D:\\Downloads",
+      includeTerms: ["qq"]
+    });
+    expect(parseSearchQuery("parent:D:\\Downloads qq")).toMatchObject({
+      mode: "files",
+      parentScope: "D:\\Downloads",
+      includeTerms: ["qq"]
+    });
+  });
+
   it("recognizes path terms containing backslash or drive prefix", () => {
     expect(parseSearchQuery("desktop\\毕业 d:\\")).toMatchObject({
       keywords: ["毕业"],
       pathTerms: ["desktop\\", "d:\\"]
     });
+  });
+});
+
+describe("buildEverythingSearches", () => {
+  it("builds app candidate and broad searches for default launcher queries", () => {
+    expect(buildEverythingSearches(parseSearchQuery("qq"), 200)).toEqual([
+      [
+        "-n",
+        "40",
+        "-json",
+        "-attributes",
+        "-size",
+        "-dm",
+        "-run-count",
+        "-date-run",
+        "ext:exe;lnk",
+        "qq"
+      ],
+      [
+        "-n",
+        "60",
+        "-offset",
+        "0",
+        "-json",
+        "-attributes",
+        "-size",
+        "-dm",
+        "-run-count",
+        "-date-run",
+        "qq"
+      ]
+    ]);
+  });
+
+  it("builds a default next-page search with offset and without app candidates", () => {
+    expect(buildEverythingMoreArgs(parseSearchQuery("qq"), 60)).toEqual([
+      "-n",
+      "60",
+      "-offset",
+      "60",
+      "-json",
+      "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "qq"
+    ]);
+  });
+
+  it("does not build ES pagination for non-default searches", () => {
+    expect(buildEverythingMoreArgs(parseSearchQuery("file: qq"), 60)).toBeUndefined();
+    expect(buildEverythingMoreArgs(parseSearchQuery("app: qq"), 60)).toBeUndefined();
+    expect(buildEverythingMoreArgs(parseSearchQuery("recent: qq"), 60)).toBeUndefined();
+  });
+
+  it("keeps explicit file filters out of app candidate searches", () => {
+    expect(buildEverythingSearches(parseSearchQuery("file: qq"), 200)).toEqual([
+      [
+        "-n",
+        "200",
+        "-json",
+        "-attributes",
+        "-size",
+        "-dm",
+        "-run-count",
+        "-date-run",
+        "/a-d",
+        "qq"
+      ]
+    ]);
+  });
+
+  it("uses native ES path and parent scopes", () => {
+    expect(buildEverythingSearches(parseSearchQuery("path:D:\\Downloads qq"), 200)[0]).toContain("-path");
+    expect(buildEverythingSearches(parseSearchQuery("path:D:\\Downloads qq"), 200)[0]).toContain("D:\\Downloads");
+    expect(buildEverythingSearches(parseSearchQuery("parent:D:\\Downloads qq"), 200)[0]).toContain("-parent");
+    expect(buildEverythingSearches(parseSearchQuery("parent:D:\\Downloads qq"), 200)[0]).toContain("D:\\Downloads");
+  });
+
+  it("passes excluded terms and Everything OR groups through to ES", () => {
+    expect(buildEverythingSearches(parseSearchQuery("<qq|wechat> !backup"), 200)[1]).toEqual([
+      "-n",
+      "60",
+      "-offset",
+      "0",
+      "-json",
+      "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "<qq|wechat>",
+      "!backup"
+    ]);
   });
 });
 

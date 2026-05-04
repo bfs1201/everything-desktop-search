@@ -4,6 +4,7 @@ import App from "../../src/renderer/App";
 
 const api = {
   search: vi.fn(),
+  loadMore: vi.fn(),
   openPath: vi.fn(),
   revealPath: vi.fn(),
   copyPath: vi.fn(),
@@ -25,8 +26,10 @@ beforeEach(() => {
     results: [
       { id: "D:\\QQ", name: "QQ", path: "D:\\QQ", directory: "D:\\" },
       { id: "D:\\a.txt", name: "a.txt", path: "D:\\a.txt", directory: "D:\\" }
-    ]
+    ],
+    canLoadMore: false
   });
+  api.loadMore.mockResolvedValue({ results: [], canLoadMore: false });
 });
 
 describe("App selection interactions", () => {
@@ -172,6 +175,50 @@ describe("App", () => {
     const logo = await screen.findByRole("img", { name: "QQ.exe logo" });
     expect(logo).toHaveClass("resultIcon", "realIcon");
     expect(logo).toHaveAttribute("src", "data:image/png;base64,qq-logo");
+  });
+
+  it("renders section headers without making them selectable results", async () => {
+    api.search.mockResolvedValue({
+      results: [
+        {
+          id: "D:\\Recent\\qq-notes.txt",
+          name: "qq-notes.txt",
+          path: "D:\\Recent\\qq-notes.txt",
+          directory: "D:\\Recent",
+          section: "history"
+        },
+        {
+          id: "C:\\Program Files\\Tencent\\QQ\\QQ.exe",
+          name: "QQ.exe",
+          path: "C:\\Program Files\\Tencent\\QQ\\QQ.exe",
+          directory: "C:\\Program Files\\Tencent\\QQ",
+          kind: "app",
+          section: "apps"
+        },
+        {
+          id: "D:\\Downloads\\qq.txt",
+          name: "qq.txt",
+          path: "D:\\Downloads\\qq.txt",
+          directory: "D:\\Downloads",
+          section: "files"
+        }
+      ] as Array<Record<string, unknown>>
+    });
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "qq" }
+    });
+
+    expect(await screen.findByText("常用")).toHaveClass("sectionHeader");
+    expect(screen.getByText("应用")).toHaveClass("sectionHeader");
+    expect(screen.getByText("文件/文件夹")).toHaveClass("sectionHeader");
+    expect(screen.getAllByRole("option")).toHaveLength(3);
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    expect(api.openPath).toHaveBeenCalledWith("C:\\Program Files\\Tencent\\QQ\\QQ.exe");
   });
 
   it("按 Enter 打开当前选中结果并隐藏窗口", async () => {
@@ -329,5 +376,43 @@ describe("App", () => {
     fireEvent.scroll(list);
 
     expect(await screen.findByText("8.txt")).toBeInTheDocument();
+  });
+
+  it("requests another ES page when local results are exhausted near the bottom", async () => {
+    api.search.mockResolvedValue({
+      results: Array.from({ length: 8 }, (_, index) => ({
+        id: `D:\\${index}.txt`,
+        name: `${index}.txt`,
+        path: `D:\\${index}.txt`,
+        directory: "D:\\"
+      })),
+      canLoadMore: true,
+      nextOffset: 60,
+      queryMode: "default"
+    });
+    api.loadMore.mockResolvedValue({
+      results: [
+        { id: "D:\\7.txt", name: "7.txt", path: "D:\\7.txt", directory: "D:\\" },
+        { id: "D:\\8.txt", name: "8.txt", path: "D:\\8.txt", directory: "D:\\" }
+      ],
+      canLoadMore: false,
+      queryMode: "default"
+    });
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "qq" }
+    });
+
+    expect(await screen.findByText("7.txt")).toBeInTheDocument();
+    const list = screen.getByRole("listbox");
+    Object.defineProperty(list, "scrollTop", { value: 500, configurable: true });
+    Object.defineProperty(list, "clientHeight", { value: 200, configurable: true });
+    Object.defineProperty(list, "scrollHeight", { value: 650, configurable: true });
+    fireEvent.scroll(list);
+
+    await waitFor(() => expect(api.loadMore).toHaveBeenCalledWith("qq", 60));
+    expect(await screen.findByText("8.txt")).toBeInTheDocument();
+    expect(screen.getAllByText("7.txt")).toHaveLength(1);
   });
 });

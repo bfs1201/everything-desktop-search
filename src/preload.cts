@@ -5,6 +5,9 @@ const api = {
   search(query: string): Promise<SearchResponse> {
     return ipcRenderer.invoke("search", query);
   },
+  loadMore(query: string, offset: number): Promise<SearchResponse> {
+    return ipcRenderer.invoke("load-more", query, offset);
+  },
   openPath(filePath: string): Promise<string> {
     return ipcRenderer.invoke("open-path", filePath);
   },

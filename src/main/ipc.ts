@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
-import { searchEverything } from "./everythingSearch.js";
+import { loadMoreEverything, searchEverything } from "./everythingSearch.js";
 import { createFileActions } from "./fileActions.js";
 import { getUsageHistoryPath, loadUsageHistory, recordOpenedPath } from "./usageHistory.js";
 import { restorePreviousForegroundWindow } from "./windowFocus.js";
@@ -23,6 +23,15 @@ async function hideLauncherWindow(window: BrowserWindow) {
 export function registerIpc() {
   ipcMain.handle("search", (_event, query: string) =>
     searchEverything(query, {
+      loadUsageHistory: () => loadUsageHistory(historyPath),
+      getFileIcon: async (filePath) => {
+        const icon = await app.getFileIcon(filePath, { size: "normal" });
+        return icon.toDataURL();
+      }
+    })
+  );
+  ipcMain.handle("load-more", (_event, query: string, offset: number) =>
+    loadMoreEverything(query, offset, {
       loadUsageHistory: () => loadUsageHistory(historyPath),
       getFileIcon: async (filePath) => {
         const icon = await app.getFileIcon(filePath, { size: "normal" });

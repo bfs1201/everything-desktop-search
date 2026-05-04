@@ -4,7 +4,8 @@ import { promisify } from "node:util";
 import type { SearchResponse, SearchResult } from "../shared/searchTypes.js";
 import {
   buildChineseCandidateArgs,
-  buildEverythingArgs,
+  buildEverythingMoreArgs,
+  buildEverythingSearches,
   isPinyinCandidateQuery,
   parseSearchQuery
 } from "./searchQuery.js";
@@ -22,6 +23,7 @@ type GetFileIcon = (filePath: string) => Promise<string | undefined>;
 type SearchResultKind = NonNullable<SearchResult["kind"]>;
 
 const DIRECTORY_ATTRIBUTE = 16;
+const DEFAULT_PAGE_LIMIT = 60;
 
 interface SearchDeps {
   execFile?: ExecFile;
@@ -36,6 +38,9 @@ interface EverythingJsonResult {
   path?: string;
   attributes?: number | string;
   size?: number | string;
+  "run-count"?: number | string;
+  "date-run"?: number | string;
+  "date-modified"?: number | string;
 }
 
 function parseAttributes(attributes: number | string | undefined) {
@@ -64,6 +69,32 @@ function parseSize(size: number | string | undefined) {
   return undefined;
 }
 
+function parseDateColumn(value: number | string | undefined) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (typeof value === "string") {
+    const numericValue = Number.parseInt(value, 10);
+    if (!Number.isNaN(numericValue) && String(numericValue) === value.trim()) {
+      return numericValue;
+    }
+
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+
+  return undefined;
+}
+
+function resultMetadata(row: EverythingJsonResult) {
+  return {
+    runCount: parseSize(row["run-count"]),
+    dateRun: parseDateColumn(row["date-run"]),
+    dateModified: parseDateColumn(row["date-modified"])
+  };
+}
+
 function parseEverythingJsonOutput(output: string): SearchResult[] | undefined {
   try {
     const parsed = JSON.parse(output) as { results?: EverythingJsonResult[] } | EverythingJsonResult[];
@@ -82,6 +113,7 @@ function parseEverythingJsonOutput(output: string): SearchResult[] | undefined {
             path: filePath,
             directory: path.win32.dirname(filePath),
             size: parseSize(row.size),
+            ...resultMetadata(row),
             kind: parseAttributes(row.attributes) & DIRECTORY_ATTRIBUTE ? "folder" : classifySearchResult(filePath, false)
           };
         }
@@ -101,6 +133,7 @@ function parseEverythingJsonOutput(output: string): SearchResult[] | undefined {
           path: filePath,
           directory: path.win32.dirname(filePath),
           size: parseSize(row.size),
+          ...resultMetadata(row),
           kind
         } satisfies SearchResult;
       })
@@ -218,6 +251,23 @@ function mergeResults(results: SearchResult[]) {
   });
 }
 
+function responsePaging(
+  queryMode: SearchResponse["queryMode"],
+  resultCount: number,
+  offset = 0
+): Pick<SearchResponse, "canLoadMore" | "nextOffset" | "queryMode"> {
+  if (queryMode !== "default") {
+    return { queryMode };
+  }
+
+  const canLoadMore = resultCount >= DEFAULT_PAGE_LIMIT;
+  return {
+    queryMode,
+    canLoadMore,
+    nextOffset: canLoadMore ? offset + DEFAULT_PAGE_LIMIT : undefined
+  };
+}
+
 export async function searchEverything(query: string, deps: SearchDeps = {}): Promise<SearchResponse> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -227,7 +277,7 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
   const execFile = deps.execFile ?? defaultExecFile;
   const startEverything = deps.startEverything ?? defaultStartEverything;
   const parsedQuery = parseSearchQuery(trimmed);
-  const args = buildEverythingArgs(parsedQuery, 200);
+  const searchArgs = buildEverythingSearches(parsedQuery);
   const candidateArgs = isPinyinCandidateQuery(parsedQuery) ? buildChineseCandidateArgs(parsedQuery, 300) : undefined;
   const getRankedResults = async (outputs: ProcessOutput[]) => {
     const usageHistory = deps.loadUsageHistory ? await deps.loadUsageHistory() : {};
@@ -241,8 +291,12 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
     );
   };
   const runSearches = async () => {
-    const { stdout } = await execFile(ES_PATH, args);
-    const outputs = [stdout];
+    const outputs: ProcessOutput[] = [];
+
+    for (const args of searchArgs) {
+      const { stdout } = await execFile(ES_PATH, args);
+      outputs.push(stdout);
+    }
 
     if (candidateArgs) {
       try {
@@ -257,12 +311,14 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
   };
 
   try {
-    return { results: await getRankedResults(await runSearches()) };
+    const results = await getRankedResults(await runSearches());
+    return { results, ...responsePaging(parsedQuery.mode, results.length) };
   } catch (firstError) {
     if (isEverythingIpcError(firstError)) {
       try {
         await startEverything();
-        return { results: await getRankedResults(await runSearches()) };
+        const results = await getRankedResults(await runSearches());
+        return { results, ...responsePaging(parsedQuery.mode, results.length) };
       } catch (retryError) {
         return { results: [], error: `Everything 搜索失败：${messageFromError(retryError)}` };
       }
@@ -270,4 +326,26 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
 
     return { results: [], error: `Everything 搜索失败：${messageFromError(firstError)}` };
   }
+}
+
+export async function loadMoreEverything(query: string, offset: number, deps: SearchDeps = {}): Promise<SearchResponse> {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return { results: [] };
+  }
+
+  const parsedQuery = parseSearchQuery(trimmed);
+  const args = buildEverythingMoreArgs(parsedQuery, offset);
+  if (!args) {
+    return { results: [], queryMode: parsedQuery.mode, canLoadMore: false };
+  }
+
+  const execFile = deps.execFile ?? defaultExecFile;
+  const { stdout } = await execFile(ES_PATH, args);
+  const usageHistory = deps.loadUsageHistory ? await deps.loadUsageHistory() : {};
+  const results = await withIcons(
+    rankSearchResults(parseEverythingOutput(decodeEverythingOutput(stdout)), parsedQuery, usageHistory),
+    deps.getFileIcon
+  );
+  return { results, ...responsePaging(parsedQuery.mode, results.length, offset) };
 }

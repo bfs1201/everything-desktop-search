@@ -8,20 +8,26 @@
 flowchart LR
   A["双击 Ctrl"] --> B["显示搜索浮窗"]
   B --> C["输入关键词或过滤器"]
-  C --> D["调用 Everything CLI"]
-  D --> E["解析与合并结果"]
-  E --> F["按匹配度、类型、使用历史排序"]
-  F --> G{"用户操作"}
-  G --> H["Enter 打开"]
-  G --> I["Alt+Enter 定位"]
-  G --> J["Ctrl+C 复制路径"]
+  C --> D["应用优先搜索"]
+  C --> E["文件/文件夹搜索"]
+  D --> F["解析 Everything 元数据"]
+  E --> F
+  F --> G["按常用、应用、文件分组排序"]
+  G --> H{"用户操作"}
+  H --> I["Enter 打开"]
+  H --> J["Alt+Enter 定位"]
+  H --> K["Ctrl+C 复制路径"]
 ```
 
 - 使用 `D:\Everything\es.exe` 获取本机文件、文件夹和应用结果。
+- 默认查询会先搜索 `exe`、`lnk` 应用候选，再搜索更广泛的文件和文件夹结果。
 - 支持 `folder:`、`file:`、`doc:`、`pic:`、`video:`、`audio:` 类型过滤。
+- 支持 `app:`、`recent:`、`path:`、`parent:` 等模式化查询。
+- 支持 `!关键词` 排除结果，以及 Everything 原生 OR 语法，例如 `<qq|wechat>`。
 - 支持路径约束，例如 `desktop\毕业` 会把路径和关键词拆开搜索。
 - 支持中文名称的拼音和首字母排序增强，例如 `weixin`、`wx` 可命中中文应用名。
 - 记录成功打开过的路径，让常用结果在后续搜索中更靠前。
+- 读取 Everything 的运行次数和最近运行时间，让应用与最近使用结果排序更贴近日常使用习惯。
 - Everything IPC 未运行时会尝试启动 `D:\Everything\Everything.exe` 后重试。
 
 ## 使用方式
@@ -36,7 +42,7 @@ flowchart LR
 | `Enter` | 打开选中结果 |
 | `Alt+Enter` | 在资源管理器中定位选中结果 |
 | `Ctrl+C` | 复制选中结果路径 |
-| `Ctrl+1` 到 `Ctrl+8` | 直接打开当前可见的第 1 到第 8 个结果 |
+| `Alt+1` 到 `Alt+8` | 直接打开当前可见的第 1 到第 8 个结果 |
 | `Ctrl+9` | 展示更多结果 |
 
 ## 查询语法
@@ -50,6 +56,12 @@ flowchart LR
 | `pic: logo` | 搜索图片类文件 |
 | `video: demo` | 搜索视频类文件 |
 | `audio: music` | 搜索音频类文件 |
+| `app: qq` | 只搜索应用候选，如 `exe` 和 `lnk` |
+| `recent: code` | 按 Everything 最近运行时间优先搜索 |
+| `path:D:\Downloads qq` | 在指定路径范围内搜索关键词 |
+| `parent:D:\Downloads qq` | 只搜索指定父目录下的结果 |
+| `qq !backup` | 搜索 `qq`，排除包含 `backup` 的结果 |
+| `<qq|wechat>` | 使用 Everything OR 语法搜索多个候选词 |
 | `D:\Work\ report` | 在路径约束下搜索关键词 |
 
 ## 运行环境
@@ -104,9 +116,10 @@ graph TD
   D --> F["查询解析"]
   D --> G["结果排序"]
   D --> H["使用历史"]
-  D --> I["D:\\Everything\\es.exe"]
+  D --> I["Everything 运行元数据"]
+  D --> N["D:\\Everything\\es.exe"]
   J["React 渲染进程"] --> K["搜索输入"]
-  J --> L["结果列表"]
+  J --> L["常用/应用/文件分组列表"]
   J --> M["键盘操作"]
   J --> C
 ```
@@ -117,7 +130,7 @@ graph TD
 | `src/main/ipc.ts` | 暴露搜索、打开、定位、复制、隐藏窗口等 IPC 能力 |
 | `src/main/everythingSearch.ts` | 调用 Everything CLI，解析输出，处理 IPC 未运行时的重试 |
 | `src/main/searchQuery.ts` | 解析查询过滤器、路径约束和关键词，生成 Everything 参数 |
-| `src/main/searchRanking.ts` | 根据文件名、路径、类型、拼音和使用历史计算排序 |
+| `src/main/searchRanking.ts` | 根据文件名、路径、类型、拼音、使用历史和 Everything 运行元数据计算排序 |
 | `src/main/usageHistory.ts` | 读写打开历史，用于排序加权 |
 | `src/renderer/App.tsx` | 搜索浮窗 UI、结果列表和快捷键交互 |
 | `src/preload.cts` | 通过 `contextBridge` 暴露安全的渲染进程 API |
@@ -137,21 +150,24 @@ sequenceDiagram
   U->>R: 输入查询
   R->>I: search(query)
   I->>S: searchEverything(query)
-  S->>S: 解析过滤器和路径约束
-  S->>E: 执行 es.exe
-  E-->>S: 返回 JSON 或文本结果
+  S->>S: 解析模式、过滤器、路径约束和排除词
+  S->>E: 执行应用候选搜索
+  S->>E: 执行文件/文件夹搜索
+  E-->>S: 返回 JSON、attributes、size、date-run 等结果
   S->>H: 读取历史
-  S->>S: 合并、识别类型、排序
+  S->>S: 合并、识别类型、分组、排序
   S-->>I: SearchResponse
   I-->>R: 搜索结果
-  R-->>U: 展示并支持键盘操作
+  R-->>U: 按常用、应用、文件/文件夹分组展示
 ```
 
 ## 测试重点
 
 - 双击 `Ctrl` 的检测和窗口聚焦行为。
-- Everything 输出解析、GB18030 解码、JSON attributes 类型判断。
-- 查询过滤器、路径约束和扩展名过滤参数。
-- 拼音候选召回、拼音排序、应用结果优先。
+- Everything 输出解析、GB18030 解码、JSON attributes 类型判断和运行元数据读取。
+- 查询过滤器、路径约束、父目录约束、排除词和扩展名过滤参数。
+- 默认应用候选搜索、应用专搜、最近运行搜索和文件模式搜索。
+- 拼音候选召回、拼音排序、常用/应用/文件分组排序。
 - 打开成功后的使用历史记录。
+- 分组标题渲染、`Alt+数字` 快速打开和 `Ctrl+9` 展示更多。
 - Vite、Electron preload、窗口行为等配置。

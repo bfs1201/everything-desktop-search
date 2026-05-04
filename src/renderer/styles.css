@@ -75,6 +75,18 @@ body {
   text-align: center;
 }
 
+.resultGroup {
+  width: 100%;
+}
+
+.sectionHeader {
+  padding: 12px 10px 5px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
 .result,
 .moreResult {
   display: grid;
