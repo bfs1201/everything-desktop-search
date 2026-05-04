@@ -10,12 +10,11 @@
     "build": "tsc -p tsconfig.node.json && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "electron .",
+    "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win portable"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
-    "electron": "^36.0.0",
     "pinyin-pro": "^3.28.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -28,6 +27,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "electron": "^36.0.0",
     "electron-builder": "^26.0.0",
     "jsdom": "^26.0.0",
     "typescript": "^5.8.0",

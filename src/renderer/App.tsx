@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SearchResult } from "../shared/searchTypes";
 import "./styles.css";
 
@@ -16,16 +16,7 @@ function useDebouncedValue(value: string, delayMs: number) {
 }
 
 function resultIconClass(result: SearchResult) {
-  return result.kind === "folder" ? "resultIcon folderIcon" : "resultIcon fileIcon";
-}
-
-function shouldRenderRealIcon(result: SearchResult) {
-  return Boolean(result.iconDataUrl && result.kind !== "folder");
-}
-
-function openResult(result: SearchResult) {
-  window.everythingSearch.openPath(result.path);
-  window.everythingSearch.hideWindow();
+  return result.name.includes(".") ? "resultIcon fileIcon" : "resultIcon folderIcon";
 }
 
 export default function App() {
@@ -36,29 +27,27 @@ export default function App() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const resultRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const selectedIndexRef = useRef(0);
-  const resultsRef = useRef<SearchResult[]>([]);
   const debouncedQuery = useDebouncedValue(query, 120);
   const hasQuery = Boolean(query.trim());
   const visibleResults = results.slice(0, visibleCount);
+  const selected = useMemo(() => results[selectedIndex], [results, selectedIndex]);
   const hasMore = visibleCount < results.length;
 
-  function selectIndex(index: number) {
-    selectedIndexRef.current = index;
-    setSelectedIndex(index);
-  }
-
   useEffect(() => {
+    function focusSearchInput() {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+
     window.everythingSearch.onWindowShown(() => {
       setQuery("");
       setResults([]);
-      resultsRef.current = [];
       setVisibleCount(PAGE_SIZE);
-      selectIndex(0);
+      setSelectedIndex(0);
       setError("");
       setIsLoading(false);
-      inputRef.current?.focus();
+      focusSearchInput();
+      window.setTimeout(focusSearchInput, 0);
     });
   }, []);
 
@@ -72,9 +61,8 @@ export default function App() {
     async function runSearch() {
       if (!debouncedQuery.trim()) {
         setResults([]);
-        resultsRef.current = [];
         setVisibleCount(PAGE_SIZE);
-        selectIndex(0);
+        setSelectedIndex(0);
         setError("");
         setIsLoading(false);
         return;
@@ -85,10 +73,9 @@ export default function App() {
       if (!active) {
         return;
       }
-      resultsRef.current = response.results;
       setResults(response.results);
       setVisibleCount(PAGE_SIZE);
-      selectIndex(0);
+      setSelectedIndex(0);
       setError(response.error ?? "");
       setIsLoading(false);
     }
@@ -103,10 +90,11 @@ export default function App() {
     function onKeyDown(event: KeyboardEvent) {
       const number = Number(event.key);
       if (event.ctrlKey && Number.isInteger(number) && number >= 1 && number <= 8) {
-        const result = resultsRef.current[number - 1];
+        const result = visibleResults[number - 1];
         if (result) {
           event.preventDefault();
-          openResult(result);
+          window.everythingSearch.openPath(result.path);
+          window.everythingSearch.hideWindow();
         }
       }
       if (event.ctrlKey && event.key === "9" && hasMore) {
@@ -119,36 +107,30 @@ export default function App() {
       }
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        const nextIndex = Math.min(selectedIndexRef.current + 1, Math.max(resultsRef.current.length - 1, 0));
-        setVisibleCount((count) => Math.max(count, Math.min(nextIndex + 1, resultsRef.current.length)));
-        selectIndex(nextIndex);
+        setSelectedIndex((index) => Math.min(index + 1, Math.max(results.length - 1, 0)));
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        selectIndex(Math.max(selectedIndexRef.current - 1, 0));
+        setSelectedIndex((index) => Math.max(index - 1, 0));
       }
-      const activeSelected = resultsRef.current[selectedIndexRef.current];
-      if (event.key === "Enter" && activeSelected) {
+      if (event.key === "Enter" && selected) {
         event.preventDefault();
         if (event.altKey) {
-          window.everythingSearch.revealPath(activeSelected.path);
+          window.everythingSearch.revealPath(selected.path);
         } else {
-          openResult(activeSelected);
+          window.everythingSearch.openPath(selected.path);
+          window.everythingSearch.hideWindow();
         }
       }
-      if (event.key.toLowerCase() === "c" && event.ctrlKey && activeSelected) {
+      if (event.key.toLowerCase() === "c" && event.ctrlKey && selected) {
         event.preventDefault();
-        window.everythingSearch.copyPath(activeSelected.path);
+        window.everythingSearch.copyPath(selected.path);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hasMore, results, visibleResults]);
-
-  useEffect(() => {
-    resultRefs.current[selectedIndex]?.scrollIntoView?.({ block: "nearest" });
-  }, [selectedIndex, visibleCount]);
+  }, [hasMore, results.length, selected, visibleResults]);
 
   function loadNextPage() {
     setVisibleCount((count) => Math.min(count + PAGE_SIZE, results.length));
@@ -184,19 +166,10 @@ export default function App() {
               <div
                 className={index === selectedIndex ? "result selected" : "result"}
                 key={result.id}
-                ref={(node) => {
-                  resultRefs.current[index] = node;
-                }}
                 role="option"
                 aria-selected={index === selectedIndex}
-                onMouseEnter={() => selectIndex(index)}
-                onClick={() => openResult(result)}
               >
-                {shouldRenderRealIcon(result) ? (
-                  <img className="resultIcon realIcon" src={result.iconDataUrl} alt={`${result.name} 图标`} />
-                ) : (
-                  <div className={resultIconClass(result)} aria-hidden="true" />
-                )}
+                <div className={resultIconClass(result)} aria-hidden="true" />
                 <div className="resultText">
                   <div className="name">{result.name}</div>
                   <div className="path">{result.path}</div>

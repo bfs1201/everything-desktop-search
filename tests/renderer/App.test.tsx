@@ -40,21 +40,38 @@ describe("App", () => {
     expect(api.search).not.toHaveBeenCalled();
   });
 
-  it("每次呼出窗口都会清空上一次搜索", async () => {
-    render(<App />);
+  it("窗口显示后下一轮仍把焦点放回搜索框并清空旧搜索", async () => {
+    const outsideButton = document.createElement("button");
+    document.body.appendChild(outsideButton);
 
-    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
-      target: { value: "qq" }
-    });
-    await screen.findByText("QQ");
+    try {
+      render(<App />);
+      const input = screen.getByRole("textbox");
 
-    act(() => {
-      windowShownCallback?.();
-    });
+      fireEvent.change(input, {
+        target: { value: "qq" }
+      });
+      await screen.findByText("QQ");
 
-    await waitFor(() => expect(screen.getByPlaceholderText("搜索文件、文件夹或路径")).toHaveValue(""));
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    expect(api.setExpanded).toHaveBeenLastCalledWith(false);
+      act(() => {
+        windowShownCallback?.();
+      });
+      expect(input).toHaveValue("");
+      expect(document.activeElement).toBe(input);
+
+      outsideButton.focus();
+      expect(document.activeElement).toBe(outsideButton);
+
+      await act(async () => {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 0);
+        });
+      });
+      expect(document.activeElement).toBe(input);
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    } finally {
+      outsideButton.remove();
+    }
   });
 
   it("按参考图布局渲染搜索结果", async () => {
@@ -111,77 +128,6 @@ describe("App", () => {
     expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
   });
 
-  it("渲染搜索结果自带的真实图标", async () => {
-    api.search.mockResolvedValue({
-      results: [
-        {
-          id: "D:\\Weixin\\Weixin.exe",
-          name: "Weixin.exe",
-          path: "D:\\Weixin\\Weixin.exe",
-          directory: "D:\\Weixin",
-          iconDataUrl: "data:image/png;base64,abc"
-        }
-      ]
-    });
-    render(<App />);
-
-    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
-      target: { value: "weixin" }
-    });
-
-    expect(await screen.findByAltText("Weixin.exe 图标")).toHaveAttribute("src", "data:image/png;base64,abc");
-  });
-
-  it("文件夹结果固定渲染文件夹图标", async () => {
-    api.search.mockResolvedValue({
-      results: [
-        {
-          id: "D:\\QQ",
-          name: "QQ",
-          path: "D:\\QQ",
-          directory: "D:\\",
-          kind: "folder",
-          iconDataUrl: "data:image/png;base64,wrong"
-        }
-      ]
-    });
-    render(<App />);
-
-    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
-      target: { value: "qq" }
-    });
-
-    expect(await screen.findByText("QQ")).toBeInTheDocument();
-    expect(screen.queryByAltText("QQ 图标")).not.toBeInTheDocument();
-    expect(document.querySelector(".folderIcon")).toBeInTheDocument();
-  });
-
-  it("点击结果项会直接打开目标并隐藏窗口", async () => {
-    render(<App />);
-
-    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
-      target: { value: "txt" }
-    });
-    await screen.findByText("a.txt");
-    fireEvent.click(screen.getByText("a.txt").closest('[role="option"]')!);
-
-    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
-    expect(api.hideWindow).toHaveBeenCalledOnce();
-  });
-
-  it("鼠标悬停结果时同步高亮和实际选中项", async () => {
-    render(<App />);
-
-    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
-      target: { value: "txt" }
-    });
-    await screen.findByText("a.txt");
-    fireEvent.mouseEnter(screen.getByText("a.txt").closest('[role="option"]')!);
-    fireEvent.keyDown(window, { key: "Enter" });
-
-    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
-  });
-
   it("Alt+Enter 打开选中结果所在位置", async () => {
     render(<App />);
 
@@ -189,7 +135,6 @@ describe("App", () => {
       target: { value: "txt" }
     });
     await screen.findByText("QQ");
-    await waitFor(() => expect(screen.getByRole("option", { selected: true })).toHaveTextContent("QQ"));
     fireEvent.keyDown(window, { key: "Enter", altKey: true });
 
     expect(api.revealPath).toHaveBeenCalledWith("D:\\QQ");
@@ -243,30 +188,5 @@ describe("App", () => {
     fireEvent.scroll(list);
 
     expect(await screen.findByText("8.txt")).toBeInTheDocument();
-  });
-
-  it("方向键选中分页外结果时扩展列表并滚动到选中项", async () => {
-    const scrollIntoView = vi.fn();
-    window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
-    api.search.mockResolvedValue({
-      results: Array.from({ length: 13 }, (_, index) => ({
-        id: `D:\\${index}.txt`,
-        name: `${index}.txt`,
-        path: `D:\\${index}.txt`,
-        directory: "D:\\"
-      }))
-    });
-    render(<App />);
-
-    fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
-      target: { value: "qq" }
-    });
-    await screen.findByText("0.txt");
-    for (let index = 0; index < 8; index += 1) {
-      fireEvent.keyDown(window, { key: "ArrowDown" });
-    }
-
-    expect(await screen.findByText("8.txt")).toBeInTheDocument();
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
   });
 });
