@@ -77,6 +77,33 @@ describe("App selection interactions", () => {
     expect(screen.getByRole("option", { selected: true })).toHaveTextContent("8.txt");
   });
 
+  it("loads and scrolls to the last result when ArrowUp wraps from the first result", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    api.search.mockResolvedValue({
+      results: Array.from({ length: 13 }, (_, index) => ({
+        id: `D:\\${index}.txt`,
+        name: `${index}.txt`,
+        path: `D:\\${index}.txt`,
+        directory: "D:\\"
+      }))
+    });
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "qq" }
+    });
+
+    await screen.findByText("7.txt");
+    expect(screen.queryByText("12.txt")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+
+    expect(await screen.findByText("12.txt")).toBeInTheDocument();
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent("12.txt");
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }));
+  });
+
   it("scrolls the selected result into view after keyboard movement", async () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;

@@ -166,7 +166,13 @@ export default function App() {
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setSelectedIndex((index) => (results.length > 0 ? (index - 1 + results.length) % results.length : 0));
+        setSelectedIndex((index) => {
+          const nextIndex = results.length > 0 ? (index - 1 + results.length) % results.length : 0;
+          if (nextIndex >= visibleCount) {
+            void loadNextPage(nextIndex + 1);
+          }
+          return nextIndex;
+        });
       }
       if (event.key === "Enter" && selected) {
         event.preventDefault();
