@@ -14,7 +14,29 @@ describe("window behavior", () => {
     const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
 
     expect(mainSource).toContain("showAndFocusWindow");
-    expect(mainSource).toContain("mainWindow.webContents.focus()");
+    expect(mainSource).toContain("window.webContents.focus()");
+    expect(mainSource).not.toContain("if (mainWindow.isVisible()) {\n    mainWindow.hide();");
+  });
+
+  it("npm start 先构建再启动 Electron，避免运行旧 dist", () => {
+    const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf-8")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(packageJson.scripts.start).toBe("npm run build && electron .");
+  });
+
+  it("双击 Ctrl 显示窗口时请求应用、窗口和页面焦点", () => {
+    const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
+
+    expect(mainSource).toContain("showAndFocusWindow");
+    expect(mainSource).toContain("isShowingWindow");
+    expect(mainSource).toContain("app.focus()");
+    expect(mainSource).toContain("window.focus()");
+    expect(mainSource).toContain("window.webContents.focus()");
+    expect(mainSource).toContain("window.isFocused()");
+    expect(mainSource).toContain("}, 1000)");
+    expect(mainSource).not.toContain('mainWindow.on("focus"');
     expect(mainSource).not.toContain("if (mainWindow.isVisible()) {\n    mainWindow.hide();");
   });
 

@@ -5,6 +5,8 @@ import { createDoubleCtrlDetector } from "./hotkeyDetector.js";
 import { registerIpc } from "./ipc.js";
 
 let mainWindow: BrowserWindow | null = null;
+let isShowingWindow = false;
+let showGraceTimer: NodeJS.Timeout | null = null;
 const WINDOW_WIDTH = 720;
 const COMPACT_HEIGHT = 104;
 const EXPANDED_HEIGHT = 560;
@@ -21,11 +23,40 @@ function positionWindow(window: BrowserWindow, expanded = false) {
   });
 }
 
+function focusLauncherWindow(window: BrowserWindow) {
+  window.setFocusable(true);
+  app.focus();
+  window.focus();
+  window.webContents.focus();
+
+  if (!window.isFocused()) {
+    window.setAlwaysOnTop(false);
+    window.setAlwaysOnTop(true);
+    window.moveTop();
+    window.focus();
+    window.webContents.focus();
+  }
+}
+
+function scheduleFocusRetries(window: BrowserWindow) {
+  for (const delayMs of [0, 50, 150, 300, 600]) {
+    setTimeout(() => {
+      if (!window.isDestroyed() && window.isVisible()) {
+        focusLauncherWindow(window);
+      }
+    }, delayMs);
+  }
+}
+
 function showAndFocusWindow() {
   if (!mainWindow) {
     return;
   }
 
+  isShowingWindow = true;
+  if (showGraceTimer) {
+    clearTimeout(showGraceTimer);
+  }
   positionWindow(mainWindow, false);
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
@@ -33,8 +64,12 @@ function showAndFocusWindow() {
   mainWindow.setAlwaysOnTop(true);
   mainWindow.show();
   mainWindow.moveTop();
-  mainWindow.focus();
-  mainWindow.webContents.focus();
+  focusLauncherWindow(mainWindow);
+  scheduleFocusRetries(mainWindow);
+  showGraceTimer = setTimeout(() => {
+    isShowingWindow = false;
+    showGraceTimer = null;
+  }, 1000);
   mainWindow.webContents.send("window-shown");
 }
 
@@ -54,11 +89,13 @@ async function createWindow() {
     }
   });
   mainWindow.on("blur", () => {
+    if (isShowingWindow) {
+      return;
+    }
     if (mainWindow) {
       mainWindow.hide();
     }
   });
-
   await mainWindow.loadFile(path.join(app.getAppPath(), "dist/renderer/index.html"));
 }
 
