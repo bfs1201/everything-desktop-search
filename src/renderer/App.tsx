@@ -19,6 +19,14 @@ function resultIconClass(result: SearchResult) {
   return result.name.includes(".") ? "resultIcon fileIcon" : "resultIcon folderIcon";
 }
 
+function renderResultIcon(result: SearchResult) {
+  if (result.iconDataUrl) {
+    return <img className="resultIcon realIcon" src={result.iconDataUrl} alt={`${result.name} logo`} />;
+  }
+
+  return <div className={resultIconClass(result)} aria-hidden="true" />;
+}
+
 export default function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -27,6 +35,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultRefs = useRef<Array<HTMLDivElement | null>>([]);
   const debouncedQuery = useDebouncedValue(query, 120);
   const hasQuery = Boolean(query.trim());
   const visibleResults = results.slice(0, visibleCount);
@@ -87,9 +96,13 @@ export default function App() {
   }, [debouncedQuery]);
 
   useEffect(() => {
+    resultRefs.current[selectedIndex]?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedIndex, visibleCount]);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const number = Number(event.key);
-      if (event.ctrlKey && Number.isInteger(number) && number >= 1 && number <= 8) {
+      if (event.altKey && Number.isInteger(number) && number >= 1 && number <= 8) {
         const result = visibleResults[number - 1];
         if (result) {
           event.preventDefault();
@@ -107,11 +120,17 @@ export default function App() {
       }
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setSelectedIndex((index) => Math.min(index + 1, Math.max(results.length - 1, 0)));
+        setSelectedIndex((index) => {
+          const nextIndex = results.length > 0 ? (index + 1) % results.length : 0;
+          if (nextIndex >= visibleCount) {
+            setVisibleCount((count) => Math.min(Math.max(count + PAGE_SIZE, nextIndex + 1), results.length));
+          }
+          return nextIndex;
+        });
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setSelectedIndex((index) => Math.max(index - 1, 0));
+        setSelectedIndex((index) => (results.length > 0 ? (index - 1 + results.length) % results.length : 0));
       }
       if (event.key === "Enter" && selected) {
         event.preventDefault();
@@ -130,10 +149,20 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hasMore, results.length, selected, visibleResults]);
+  }, [hasMore, results.length, selected, visibleCount, visibleResults]);
 
   function loadNextPage() {
     setVisibleCount((count) => Math.min(count + PAGE_SIZE, results.length));
+  }
+
+  function openResult(result: SearchResult) {
+    window.everythingSearch.openPath(result.path);
+    window.everythingSearch.hideWindow();
+  }
+
+  function revealResult(event: React.MouseEvent, result: SearchResult) {
+    event.preventDefault();
+    window.everythingSearch.revealPath(result.path);
   }
 
   function onResultsScroll(event: React.UIEvent<HTMLDivElement>) {
@@ -166,15 +195,21 @@ export default function App() {
               <div
                 className={index === selectedIndex ? "result selected" : "result"}
                 key={result.id}
+                ref={(node) => {
+                  resultRefs.current[index] = node;
+                }}
                 role="option"
                 aria-selected={index === selectedIndex}
+                onMouseEnter={() => setSelectedIndex(index)}
+                onClick={() => openResult(result)}
+                onContextMenu={(event) => revealResult(event, result)}
               >
-                <div className={resultIconClass(result)} aria-hidden="true" />
+                {renderResultIcon(result)}
                 <div className="resultText">
                   <div className="name">{result.name}</div>
                   <div className="path">{result.path}</div>
                 </div>
-                <div className="shortcut">Ctrl+{index + 1}</div>
+                <div className="shortcut">Alt+{index + 1}</div>
               </div>
             ))}
             {hasMore ? (

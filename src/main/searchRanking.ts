@@ -24,6 +24,12 @@ const APP_PATH_BONUSES = [
   { pattern: "\\desktop\\", bonus: 360 }
 ];
 
+const COMMON_APP_EXE_PATH_BONUSES = [
+  { pattern: "\\program files\\", bonus: 520 },
+  { pattern: "\\program files (x86)\\", bonus: 520 },
+  { pattern: "\\appdata\\local\\programs\\", bonus: 520 }
+];
+
 function normalize(value: string) {
   return value.toLowerCase();
 }
@@ -121,6 +127,31 @@ function scoreNoise(result: SearchResult) {
   }, 0);
 }
 
+function isExecutable(result: SearchResult) {
+  return path.win32.extname(result.path).toLowerCase() === ".exe";
+}
+
+function scoreCommonAppExecutable(result: SearchResult) {
+  if (!isExecutable(result)) {
+    return 0;
+  }
+
+  const normalizedPath = normalize(result.path);
+  return COMMON_APP_EXE_PATH_BONUSES.reduce((score, item) => {
+    return normalizedPath.includes(item.pattern) ? score + item.bonus : score;
+  }, 0);
+}
+
+function scoreExecutableEntryName(result: SearchResult) {
+  if (!isExecutable(result)) {
+    return 0;
+  }
+
+  const stem = normalize(nameWithoutExtension(result.name));
+  const parentName = normalize(path.win32.basename(path.win32.dirname(result.path)));
+  return stem && parentName === stem ? 420 : 0;
+}
+
 function inferredKind(result: SearchResult): SearchResult["kind"] {
   if (result.kind) {
     return result.kind;
@@ -142,13 +173,14 @@ function inferredKind(result: SearchResult): SearchResult["kind"] {
 function scoreKind(result: SearchResult) {
   const kind = inferredKind(result);
   const normalizedPath = normalize(result.path);
-  const extension = path.win32.extname(result.path).toLowerCase();
 
   if (kind !== "app") {
     return kind === "file" ? 80 : 0;
   }
 
-  const executableBonus = extension === ".exe" ? 560 : 0;
+  const executableBonus = isExecutable(result)
+    ? 560 + scoreCommonAppExecutable(result) + scoreExecutableEntryName(result)
+    : 0;
 
   return APP_PATH_BONUSES.reduce((score, item) => {
     return normalizedPath.includes(item.pattern) ? score + item.bonus : score;
@@ -171,26 +203,48 @@ export function scoreSearchResult(
   );
 }
 
+function sortableSize(result: SearchResult) {
+  return typeof result.size === "number" ? result.size : 0;
+}
+
+function isFileSearchIntent(query: ParsedSearchQuery) {
+  return Boolean(query.filter) || query.pathTerms.length > 0;
+}
+
 export function rankSearchResults(
   results: SearchResult[],
   query: ParsedSearchQuery,
   usageHistory: UsageHistory = {},
   now = Date.now()
 ) {
+  const fileSearchIntent = isFileSearchIntent(query);
+
   return results
     .map((result) => ({
       ...result,
       kind: inferredKind(result)
     }))
     .sort((left, right) => {
-    const leftScore = scoreSearchResult(left, query, usageHistory, now);
-    const rightScore = scoreSearchResult(right, query, usageHistory, now);
-    const scoreDiff = rightScore - leftScore;
+      if (fileSearchIntent) {
+        const sizeDiff = sortableSize(right) - sortableSize(left);
+        if (sizeDiff !== 0) {
+          return sizeDiff;
+        }
+      }
 
-    if (scoreDiff !== 0) {
-      return scoreDiff;
-    }
+      const leftScore = scoreSearchResult(left, query, usageHistory, now);
+      const rightScore = scoreSearchResult(right, query, usageHistory, now);
+      const scoreDiff = rightScore - leftScore;
 
-    return left.path.localeCompare(right.path, "zh-Hans");
-  });
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      const sizeDiff = sortableSize(right) - sortableSize(left);
+      if (sizeDiff !== 0) {
+        return sizeDiff;
+      }
+
+      return left.path.localeCompare(right.path, "zh-Hans");
+    });
 }

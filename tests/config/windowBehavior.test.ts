@@ -7,7 +7,21 @@ describe("window behavior", () => {
     const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
 
     expect(mainSource).toContain('mainWindow.on("blur"');
-    expect(mainSource).toContain("mainWindow.hide()");
+    expect(mainSource).toContain("hideLauncherWindow(mainWindow)");
+  });
+
+  it("隐藏启动器时释放焦点，让系统回到之前的输入位置", () => {
+    const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
+    const ipcSource = readFileSync(join(process.cwd(), "src/main/ipc.ts"), "utf-8");
+
+    expect(mainSource).toContain("capturePreviousForegroundWindow");
+    expect(mainSource).toContain("restorePreviousForegroundWindow");
+    expect(mainSource).toContain("function hideLauncherWindow");
+    expect(mainSource).toContain("window.blur()");
+    expect(mainSource).toContain("window.hide()");
+    expect(mainSource).toContain("window.setFocusable(false)");
+    expect(ipcSource).toContain("restorePreviousForegroundWindow");
+    expect(ipcSource).toContain("hideLauncherWindow");
   });
 
   it("双击 Ctrl 在窗口已显示时强制聚焦而不是隐藏", () => {

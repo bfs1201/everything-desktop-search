@@ -78,8 +78,11 @@ function formatEverythingTerm(term: string) {
   return expandedTerms.length > 1 ? `<${expandedTerms.join("|")}>` : term;
 }
 
-function appendFilters(args: string[], query: ParsedSearchQuery) {
+function appendFilters(args: string[], query: ParsedSearchQuery, includeSize = false) {
   args.push(...STRUCTURED_OUTPUT_ARGS);
+  if (includeSize) {
+    args.push("-size");
+  }
 
   if (query.filter === "folder") {
     args.push("/ad");
@@ -114,7 +117,7 @@ export function buildChineseCandidateArgs(query: ParsedSearchQuery, limit = 300)
 
 export function buildEverythingArgs(query: ParsedSearchQuery, limit = 200): string[] {
   const args = ["-n", String(limit)];
-  appendFilters(args, query);
+  appendFilters(args, query, true);
 
   args.push(...query.pathTerms);
   args.push(...query.keywords.filter((keyword) => !query.pathTerms.includes(keyword)).map(formatEverythingTerm));

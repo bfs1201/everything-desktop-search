@@ -3,17 +3,84 @@ import type { SearchResult } from "../../src/shared/searchTypes";
 import { rankSearchResults } from "../../src/main/searchRanking";
 import { parseSearchQuery } from "../../src/main/searchQuery";
 
-function result(filePath: string): SearchResult {
+function result(filePath: string, overrides: Partial<SearchResult> = {}): SearchResult {
   const parts = filePath.split("\\");
   return {
     id: filePath,
     name: parts.at(-1) ?? filePath,
     path: filePath,
-    directory: parts.slice(0, -1).join("\\")
+    directory: parts.slice(0, -1).join("\\"),
+    ...overrides
   };
 }
 
 describe("rankSearchResults", () => {
+  it("keeps default searches app-first instead of size-first", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Downloads\\qq.iso", { size: 5_000_000_000 }),
+        result("C:\\Program Files\\Tencent\\QQ\\QQ.exe", { size: 50_000_000 })
+      ],
+      parseSearchQuery("qq")
+    );
+
+    expect(ranked[0]?.path).toBe("C:\\Program Files\\Tencent\\QQ\\QQ.exe");
+  });
+
+  it("boosts recently used apps above same-name large files in default searches", () => {
+    const appPath = "D:\\Tools\\QQ\\QQ.exe";
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Downloads\\qq-backup.zip", { size: 9_000_000_000 }),
+        result(appPath, { size: 40_000_000 })
+      ],
+      parseSearchQuery("qq"),
+      {
+        [appPath]: {
+          openCount: 7,
+          lastOpenedAt: Date.parse("2026-05-03T10:00:00.000Z")
+        }
+      },
+      Date.parse("2026-05-03T10:30:00.000Z")
+    );
+
+    expect(ranked[0]?.path).toBe(appPath);
+  });
+
+  it("sorts file-filtered results from largest to smallest", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\a-small-qq.txt", { size: 10 }),
+        result("D:\\z-large-qq.txt", { size: 30 }),
+        result("D:\\medium-qq.txt", { size: 20 })
+      ],
+      parseSearchQuery("file: qq")
+    );
+
+    expect(ranked.map((item) => item.path)).toEqual([
+      "D:\\z-large-qq.txt",
+      "D:\\medium-qq.txt",
+      "D:\\a-small-qq.txt"
+    ]);
+  });
+
+  it("sorts path-constrained results from largest to smallest", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Downloads\\a-small-qq.txt", { size: 10 }),
+        result("D:\\Downloads\\z-large-qq.txt", { size: 30 }),
+        result("D:\\Downloads\\medium-qq.txt", { size: 20 })
+      ],
+      parseSearchQuery("D:\\Downloads qq")
+    );
+
+    expect(ranked.map((item) => item.path)).toEqual([
+      "D:\\Downloads\\z-large-qq.txt",
+      "D:\\Downloads\\medium-qq.txt",
+      "D:\\Downloads\\a-small-qq.txt"
+    ]);
+  });
+
   it("prefers executable application entries over shortcuts and same-name folders", () => {
     const ranked = rankSearchResults(
       [
@@ -98,6 +165,43 @@ describe("rankSearchResults", () => {
     );
 
     expect(ranked[0]?.path).toBe("D:\\Weixin\\Weixin.exe");
+  });
+
+  it("prefers common installed app executables over same-name folders", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Foo"),
+        result("C:\\Program Files\\Foo\\FooLauncher.exe")
+      ],
+      parseSearchQuery("foo")
+    );
+
+    expect(ranked[0]?.path).toBe("C:\\Program Files\\Foo\\FooLauncher.exe");
+    expect(ranked[0]?.kind).toBe("app");
+  });
+
+  it("prefers user-local installed app executables over same-name folders", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Bar"),
+        result("C:\\Users\\bfs\\AppData\\Local\\Programs\\Bar\\Bar.exe")
+      ],
+      parseSearchQuery("bar")
+    );
+
+    expect(ranked[0]?.path).toBe("C:\\Users\\bfs\\AppData\\Local\\Programs\\Bar\\Bar.exe");
+  });
+
+  it("prefers executable results even when they are outside common app locations", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Foo"),
+        result("C:\\Users\\bfs\\AppData\\Local\\Temp\\FooTool.exe")
+      ],
+      parseSearchQuery("foo")
+    );
+
+    expect(ranked[0]?.path).toBe("C:\\Users\\bfs\\AppData\\Local\\Temp\\FooTool.exe");
   });
 
   it("boosts recently and frequently opened results", () => {

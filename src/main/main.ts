@@ -3,6 +3,7 @@ import path from "node:path";
 import { UiohookKey, uIOhook } from "uiohook-napi";
 import { createDoubleCtrlDetector } from "./hotkeyDetector.js";
 import { registerIpc } from "./ipc.js";
+import { capturePreviousForegroundWindow, restorePreviousForegroundWindow } from "./windowFocus.js";
 
 let mainWindow: BrowserWindow | null = null;
 let isShowingWindow = false;
@@ -48,11 +49,22 @@ function scheduleFocusRetries(window: BrowserWindow) {
   }
 }
 
-function showAndFocusWindow() {
+async function hideLauncherWindow(window: BrowserWindow) {
+  window.blur();
+  window.hide();
+  window.setFocusable(false);
+  await restorePreviousForegroundWindow();
+}
+
+async function showAndFocusWindow() {
   if (!mainWindow) {
     return;
   }
 
+  mainWindow.setFocusable(true);
+  if (!mainWindow.isVisible()) {
+    await capturePreviousForegroundWindow();
+  }
   isShowingWindow = true;
   if (showGraceTimer) {
     clearTimeout(showGraceTimer);
@@ -93,7 +105,7 @@ async function createWindow() {
       return;
     }
     if (mainWindow) {
-      mainWindow.hide();
+      void hideLauncherWindow(mainWindow);
     }
   });
   await mainWindow.loadFile(path.join(app.getAppPath(), "dist/renderer/index.html"));
@@ -110,7 +122,7 @@ function registerKeyboardHook() {
   const detector = createDoubleCtrlDetector();
   uIOhook.on("keydown", (event) => {
     if (detector.keyDown(keyNameFromCode(event.keycode), Date.now())) {
-      showAndFocusWindow();
+      void showAndFocusWindow();
     }
   });
   uIOhook.on("keyup", (event) => {

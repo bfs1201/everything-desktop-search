@@ -29,6 +29,67 @@ beforeEach(() => {
   });
 });
 
+describe("App selection interactions", () => {
+  it("uses the same selected state for mouse hover and keyboard actions", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("a.txt");
+
+    const options = screen.getAllByRole("option");
+    fireEvent.mouseEnter(options[1]);
+    expect(options[1]).toHaveClass("selected");
+    expect(options[0]).not.toHaveClass("selected");
+
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
+  });
+
+  it("loads the next page when arrow selection moves beyond visible results", async () => {
+    api.search.mockResolvedValue({
+      results: Array.from({ length: 13 }, (_, index) => ({
+        id: `D:\\${index}.txt`,
+        name: `${index}.txt`,
+        path: `D:\\${index}.txt`,
+        directory: "D:\\"
+      }))
+    });
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "qq" }
+    });
+
+    await screen.findByText("7.txt");
+    expect(screen.queryByText("8.txt")).not.toBeInTheDocument();
+
+    for (let index = 0; index < 8; index += 1) {
+      fireEvent.keyDown(window, { key: "ArrowDown" });
+    }
+
+    expect(await screen.findByText("8.txt")).toBeInTheDocument();
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent("8.txt");
+  });
+
+  it("scrolls the selected result into view after keyboard movement", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("a.txt");
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }));
+  });
+});
+
 describe("App", () => {
   it("启动时只显示搜索框", async () => {
     render(<App />);
@@ -84,9 +145,33 @@ describe("App", () => {
     await waitFor(() => expect(api.search).toHaveBeenCalledWith("qq"));
     expect(await screen.findByText("QQ")).toHaveClass("name");
     expect(screen.getByText("D:\\QQ")).toHaveClass("path");
-    expect(screen.getByText("Ctrl+1")).toHaveClass("shortcut");
+    expect(screen.getByText("Alt+1")).toHaveClass("shortcut");
     expect(screen.getByRole("option", { selected: true })).toHaveClass("selected");
     expect(api.setExpanded).toHaveBeenLastCalledWith(true);
+  });
+
+  it("renders the real result logo when icon data is available", async () => {
+    api.search.mockResolvedValue({
+      results: [
+        {
+          id: "D:\\QQ\\QQ.exe",
+          name: "QQ.exe",
+          path: "D:\\QQ\\QQ.exe",
+          directory: "D:\\QQ",
+          kind: "app",
+          iconDataUrl: "data:image/png;base64,qq-logo"
+        }
+      ]
+    });
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "qq" }
+    });
+
+    const logo = await screen.findByRole("img", { name: "QQ.exe logo" });
+    expect(logo).toHaveClass("resultIcon", "realIcon");
+    expect(logo).toHaveAttribute("src", "data:image/png;base64,qq-logo");
   });
 
   it("按 Enter 打开当前选中结果并隐藏窗口", async () => {
@@ -102,17 +187,59 @@ describe("App", () => {
     expect(api.hideWindow).toHaveBeenCalledOnce();
   });
 
-  it("Ctrl+数字打开对应结果", async () => {
+  it("Alt+数字打开对应结果", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
       target: { value: "txt" }
     });
     await screen.findByText("a.txt");
-    fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "2", altKey: true });
 
     expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
     expect(api.hideWindow).toHaveBeenCalledOnce();
+  });
+
+  it("Ctrl+数字不再打开对应结果", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("a.txt");
+    fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+
+    expect(api.openPath).not.toHaveBeenCalled();
+    expect(api.hideWindow).not.toHaveBeenCalled();
+  });
+
+  it("opens a result with mouse click like pressing Enter", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("a.txt");
+
+    fireEvent.click(screen.getAllByRole("option")[1]);
+
+    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.hideWindow).toHaveBeenCalledOnce();
+  });
+
+  it("opens a result location with right click", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("a.txt");
+
+    fireEvent.contextMenu(screen.getAllByRole("option")[1]);
+
+    expect(api.revealPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.openPath).not.toHaveBeenCalled();
+    expect(api.hideWindow).not.toHaveBeenCalled();
   });
 
   it("方向键可以移动选中项", async () => {
@@ -123,6 +250,20 @@ describe("App", () => {
     });
     await screen.findByText("a.txt");
     fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
+  });
+
+  it("pressing ArrowUp on the first result selects the last result", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("a.txt");
+
+    fireEvent.keyDown(window, { key: "ArrowUp" });
     fireEvent.keyDown(window, { key: "Enter" });
 
     expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");

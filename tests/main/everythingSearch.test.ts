@@ -19,7 +19,8 @@ describe("parseEverythingOutput", () => {
         {
           name: "没有扩展名的文件",
           path: "D:\\Downloads",
-          attributes: 32
+          attributes: 32,
+          size: "2048"
         },
         {
           name: "QQ",
@@ -34,7 +35,8 @@ describe("parseEverythingOutput", () => {
         name: "没有扩展名的文件",
         path: "D:\\Downloads\\没有扩展名的文件",
         directory: "D:\\Downloads",
-        kind: "file"
+        kind: "file",
+        size: 2048
       },
       {
         name: "QQ",
@@ -119,7 +121,14 @@ describe("searchEverything", () => {
 
     const response = await searchEverything("file", { execFile, startEverything });
 
-    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", ["-n", "200", "-json", "-attributes", "file"]);
+    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", [
+      "-n",
+      "200",
+      "-json",
+      "-attributes",
+      "-size",
+      "file"
+    ]);
     expect(response.results[0]?.path).toBe("D:\\file.txt");
   });
 
@@ -135,6 +144,7 @@ describe("searchEverything", () => {
       "200",
       "-json",
       "-attributes",
+      "-size",
       "/ad",
       "qq"
     ]);
@@ -143,6 +153,7 @@ describe("searchEverything", () => {
       "200",
       "-json",
       "-attributes",
+      "-size",
       "ext:doc;docx;pdf;txt;md;xls;xlsx;ppt;pptx",
       "毕业"
     ]);

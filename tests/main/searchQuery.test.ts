@@ -45,6 +45,7 @@ describe("buildEverythingArgs", () => {
       "200",
       "-json",
       "-attributes",
+      "-size",
       "/ad",
       "qq"
     ]);
@@ -56,6 +57,7 @@ describe("buildEverythingArgs", () => {
       "200",
       "-json",
       "-attributes",
+      "-size",
       "/a-d",
       "qq"
     ]);
@@ -67,6 +69,7 @@ describe("buildEverythingArgs", () => {
       "200",
       "-json",
       "-attributes",
+      "-size",
       "ext:doc;docx;pdf;txt;md;xls;xlsx;ppt;pptx",
       "毕业"
     ]);
@@ -78,6 +81,7 @@ describe("buildEverythingArgs", () => {
       "200",
       "-json",
       "-attributes",
+      "-size",
       "desktop\\",
       "d:\\",
       "毕业"
@@ -91,6 +95,7 @@ describe("buildEverythingArgs", () => {
       "200",
       "-json",
       "-attributes",
+      "-size",
       "<weixin|微信>"
     ]);
   });

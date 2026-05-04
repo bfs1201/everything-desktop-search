@@ -35,6 +35,7 @@ interface EverythingJsonResult {
   name?: string;
   path?: string;
   attributes?: number | string;
+  size?: number | string;
 }
 
 function parseAttributes(attributes: number | string | undefined) {
@@ -48,6 +49,19 @@ function parseAttributes(attributes: number | string | undefined) {
   }
 
   return 0;
+}
+
+function parseSize(size: number | string | undefined) {
+  if (typeof size === "number") {
+    return Number.isFinite(size) ? size : undefined;
+  }
+
+  if (typeof size === "string") {
+    const parsed = Number.parseInt(size, 10);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+
+  return undefined;
 }
 
 function parseEverythingJsonOutput(output: string): SearchResult[] | undefined {
@@ -67,6 +81,7 @@ function parseEverythingJsonOutput(output: string): SearchResult[] | undefined {
             name: path.win32.basename(filePath),
             path: filePath,
             directory: path.win32.dirname(filePath),
+            size: parseSize(row.size),
             kind: parseAttributes(row.attributes) & DIRECTORY_ATTRIBUTE ? "folder" : classifySearchResult(filePath, false)
           };
         }
@@ -85,6 +100,7 @@ function parseEverythingJsonOutput(output: string): SearchResult[] | undefined {
           name: row.name ?? path.win32.basename(filePath),
           path: filePath,
           directory: path.win32.dirname(filePath),
+          size: parseSize(row.size),
           kind
         } satisfies SearchResult;
       })

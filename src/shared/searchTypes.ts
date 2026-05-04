@@ -3,6 +3,7 @@ export interface SearchResult {
   name: string;
   path: string;
   directory: string;
+  size?: number;
   kind?: "app" | "folder" | "file";
   iconDataUrl?: string;
 }
