@@ -11,6 +11,9 @@ const api = {
   openPath(filePath: string): Promise<string> {
     return ipcRenderer.invoke("open-path", filePath);
   },
+  openPathAndHide(filePath: string): Promise<string> {
+    return ipcRenderer.invoke("open-path-and-hide", filePath);
+  },
   revealPath(filePath: string): Promise<void> {
     return ipcRenderer.invoke("reveal-path", filePath);
   },

@@ -141,8 +141,7 @@ export default function App() {
         const result = visibleResults[number - 1];
         if (result) {
           event.preventDefault();
-          window.everythingSearch.openPath(result.path);
-          window.everythingSearch.hideWindow();
+          void window.everythingSearch.openPathAndHide(result.path);
         }
       }
       if (event.ctrlKey && event.key === "9" && hasMore) {
@@ -178,8 +177,7 @@ export default function App() {
         if (event.altKey) {
           window.everythingSearch.revealPath(selected.path);
         } else {
-          window.everythingSearch.openPath(selected.path);
-          window.everythingSearch.hideWindow();
+          void window.everythingSearch.openPathAndHide(selected.path);
         }
       }
       if (event.key.toLowerCase() === "c" && event.ctrlKey && selected) {
@@ -213,8 +211,7 @@ export default function App() {
   }
 
   function openResult(result: SearchResult) {
-    window.everythingSearch.openPath(result.path);
-    window.everythingSearch.hideWindow();
+    void window.everythingSearch.openPathAndHide(result.path);
   }
 
   function revealResult(event: React.MouseEvent, result: SearchResult) {

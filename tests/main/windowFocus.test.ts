@@ -52,4 +52,43 @@ describe("window focus restore", () => {
       expect.any(Function)
     );
   });
+
+  it("forces the visible launcher native window to the foreground using attached input threads", async () => {
+    execFile.mockImplementation((_file, _args, _options, callback) => {
+      callback(undefined, "", "");
+    });
+    const nativeHandle = Buffer.alloc(8);
+    nativeHandle.writeBigUInt64LE(74565n);
+    const { forceForegroundWindow } = await import("../../src/main/windowFocus");
+
+    await forceForegroundWindow(nativeHandle);
+
+    const command = execFile.mock.calls[0][1].at(-1);
+    expect(execFile).toHaveBeenCalledWith(
+      "powershell.exe",
+      expect.arrayContaining(["-NoProfile", "-NonInteractive", "-Command", expect.any(String)]),
+      expect.objectContaining({ windowsHide: true }),
+      expect.any(Function)
+    );
+    expect(command).not.toContain("ShowWindowAsync");
+    expect(command).toContain("BringWindowToTop");
+    expect(command).toContain("SetForegroundWindow");
+    expect(command).toContain("GetForegroundWindow");
+    expect(command).toContain("IsWindowVisible");
+    expect(command).toContain("GetWindowThreadProcessId");
+    expect(command).toContain("GetCurrentThreadId");
+    expect(command).toContain("AttachThreadInput");
+    expect(command).toContain("if ([Win32.NativeWindow]::IsWindowVisible($hwnd))");
+    expect(command).toContain("[int64]74565");
+    expect(command).toContain("finally");
+  });
+
+  it("does not invoke native foreground activation for an invalid native handle", async () => {
+    const { forceForegroundWindow } = await import("../../src/main/windowFocus");
+
+    await forceForegroundWindow(Buffer.alloc(8));
+    await forceForegroundWindow(Buffer.alloc(2));
+
+    expect(execFile).not.toHaveBeenCalled();
+  });
 });

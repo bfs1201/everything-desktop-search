@@ -14,6 +14,16 @@ export function createFileActions(deps: FileActionDeps) {
       }
       return error;
     },
+    openWithoutRecording(path: string) {
+      return deps.openPath(path);
+    },
+    async recordSuccessfulOpen(path: string) {
+      try {
+        await deps.recordOpenedPath?.(path);
+      } catch {
+        // Opening has already succeeded; usage history must not alter that result.
+      }
+    },
     reveal(path: string) {
       deps.showItemInFolder(path);
     },

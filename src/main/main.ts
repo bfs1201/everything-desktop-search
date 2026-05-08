@@ -1,9 +1,11 @@
 import { BrowserWindow, app, screen } from "electron";
 import path from "node:path";
 import { UiohookKey, uIOhook } from "uiohook-napi";
+import { advanceFocusGeneration, getFocusGeneration, isCurrentFocusGeneration } from "./focusGeneration.js";
 import { createDoubleCtrlDetector } from "./hotkeyDetector.js";
 import { registerIpc } from "./ipc.js";
-import { capturePreviousForegroundWindow, restorePreviousForegroundWindow } from "./windowFocus.js";
+import { shouldSuppressFocusRestoreForResultOpening } from "./resultOpeningFocus.js";
+import { capturePreviousForegroundWindow, forceForegroundWindow, restorePreviousForegroundWindow } from "./windowFocus.js";
 
 let mainWindow: BrowserWindow | null = null;
 let isShowingWindow = false;
@@ -24,8 +26,15 @@ function positionWindow(window: BrowserWindow, expanded = false) {
   });
 }
 
-function focusLauncherWindow(window: BrowserWindow) {
+async function focusLauncherWindow(window: BrowserWindow, expectedFocusGeneration = getFocusGeneration()) {
+  if (window.isDestroyed() || !isCurrentFocusGeneration(expectedFocusGeneration)) {
+    return;
+  }
   window.setFocusable(true);
+  await forceForegroundWindow(window.getNativeWindowHandle());
+  if (window.isDestroyed() || !window.isVisible() || !isCurrentFocusGeneration(expectedFocusGeneration)) {
+    return;
+  }
   app.focus();
   window.focus();
   window.webContents.focus();
@@ -39,21 +48,28 @@ function focusLauncherWindow(window: BrowserWindow) {
   }
 }
 
-function scheduleFocusRetries(window: BrowserWindow) {
+function scheduleFocusRetries(window: BrowserWindow, expectedFocusGeneration: number) {
   for (const delayMs of [0, 50, 150, 300, 600]) {
     setTimeout(() => {
+      if (!isCurrentFocusGeneration(expectedFocusGeneration)) {
+        return;
+      }
       if (!window.isDestroyed() && window.isVisible()) {
-        focusLauncherWindow(window);
+        void focusLauncherWindow(window, expectedFocusGeneration).catch(() => undefined);
       }
     }, delayMs);
   }
 }
 
-async function hideLauncherWindow(window: BrowserWindow) {
+async function hideLauncherWindow(window: BrowserWindow, options: { restorePreviousFocus?: boolean } = {}) {
+  const { restorePreviousFocus = true } = options;
+  advanceFocusGeneration();
   window.blur();
   window.hide();
   window.setFocusable(false);
-  await restorePreviousForegroundWindow();
+  if (restorePreviousFocus) {
+    await restorePreviousForegroundWindow();
+  }
 }
 
 async function showAndFocusWindow() {
@@ -65,6 +81,7 @@ async function showAndFocusWindow() {
   if (!mainWindow.isVisible()) {
     await capturePreviousForegroundWindow();
   }
+  const expectedFocusGeneration = advanceFocusGeneration();
   isShowingWindow = true;
   if (showGraceTimer) {
     clearTimeout(showGraceTimer);
@@ -76,8 +93,8 @@ async function showAndFocusWindow() {
   mainWindow.setAlwaysOnTop(true);
   mainWindow.show();
   mainWindow.moveTop();
-  focusLauncherWindow(mainWindow);
-  scheduleFocusRetries(mainWindow);
+  await focusLauncherWindow(mainWindow, expectedFocusGeneration);
+  scheduleFocusRetries(mainWindow, expectedFocusGeneration);
   showGraceTimer = setTimeout(() => {
     isShowingWindow = false;
     showGraceTimer = null;
@@ -105,7 +122,11 @@ async function createWindow() {
       return;
     }
     if (mainWindow) {
-      void hideLauncherWindow(mainWindow);
+      if (shouldSuppressFocusRestoreForResultOpening()) {
+        void hideLauncherWindow(mainWindow, { restorePreviousFocus: false });
+      } else {
+        void hideLauncherWindow(mainWindow);
+      }
     }
   });
   await mainWindow.loadFile(path.join(app.getAppPath(), "dist/renderer/index.html"));

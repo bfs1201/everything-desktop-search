@@ -2,6 +2,8 @@ import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
 import { loadMoreEverything, searchEverything } from "./everythingSearch.js";
 import { createFileActions } from "./fileActions.js";
 import { createFileIconResolver } from "./fileIcons.js";
+import { advanceFocusGeneration } from "./focusGeneration.js";
+import { beginResultOpening, endResultOpening } from "./resultOpeningFocus.js";
 import { getUsageHistoryPath, loadUsageHistory, recordOpenedPath } from "./usageHistory.js";
 import { restorePreviousForegroundWindow } from "./windowFocus.js";
 
@@ -22,11 +24,15 @@ const getFileIcon = createFileIconResolver({
   readShortcutLink: shell.readShortcutLink
 });
 
-async function hideLauncherWindow(window: BrowserWindow) {
+async function hideLauncherWindow(window: BrowserWindow, options: { restorePreviousFocus?: boolean } = {}) {
+  const { restorePreviousFocus = true } = options;
+  advanceFocusGeneration();
   window.blur();
   window.hide();
   window.setFocusable(false);
-  await restorePreviousForegroundWindow();
+  if (restorePreviousFocus) {
+    await restorePreviousForegroundWindow();
+  }
 }
 
 export function registerIpc() {
@@ -43,6 +49,23 @@ export function registerIpc() {
     })
   );
   ipcMain.handle("open-path", async (_event, filePath: string) => fileActions.open(filePath));
+  ipcMain.handle("open-path-and-hide", async (event, filePath: string) => {
+    beginResultOpening();
+    let error = "";
+    try {
+      error = await fileActions.openWithoutRecording(filePath);
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (window) {
+        await hideLauncherWindow(window, { restorePreviousFocus: false });
+      }
+    } finally {
+      endResultOpening({ afterBlurGrace: true });
+    }
+    if (!error) {
+      await fileActions.recordSuccessfulOpen(filePath);
+    }
+    return error;
+  });
   ipcMain.handle("reveal-path", (_event, filePath: string) => fileActions.reveal(filePath));
   ipcMain.handle("copy-path", (_event, filePath: string) => fileActions.copyPath(filePath));
   ipcMain.handle("hide-window", async (event) => {

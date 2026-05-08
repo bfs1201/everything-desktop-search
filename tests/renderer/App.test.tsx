@@ -6,6 +6,7 @@ const api = {
   search: vi.fn(),
   loadMore: vi.fn(),
   openPath: vi.fn(),
+  openPathAndHide: vi.fn(),
   revealPath: vi.fn(),
   copyPath: vi.fn(),
   hideWindow: vi.fn(),
@@ -48,7 +49,7 @@ describe("App selection interactions", () => {
 
     fireEvent.keyDown(window, { key: "Enter" });
 
-    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
   });
 
   it("loads the next page when arrow selection moves beyond visible results", async () => {
@@ -248,10 +249,10 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("option", { selected: true })).toHaveTextContent("QQ.exe"));
     fireEvent.keyDown(window, { key: "Enter" });
 
-    expect(api.openPath).toHaveBeenCalledWith("C:\\Program Files\\Tencent\\QQ\\QQ.exe");
+    expect(api.openPathAndHide).toHaveBeenCalledWith("C:\\Program Files\\Tencent\\QQ\\QQ.exe");
   });
 
-  it("按 Enter 打开当前选中结果并隐藏窗口", async () => {
+  it("按 Enter 原子打开当前选中结果并隐藏窗口", async () => {
     render(<App />);
 
     fireEvent.change(screen.getByPlaceholderText("搜索文件、文件夹或路径"), {
@@ -260,8 +261,8 @@ describe("App", () => {
     await screen.findByText("QQ");
     fireEvent.keyDown(window, { key: "Enter" });
 
-    expect(api.openPath).toHaveBeenCalledWith("D:\\QQ");
-    expect(api.hideWindow).toHaveBeenCalledOnce();
+    expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\QQ");
+    expect(api.hideWindow).not.toHaveBeenCalled();
   });
 
   it("Alt+数字打开对应结果", async () => {
@@ -273,8 +274,8 @@ describe("App", () => {
     await screen.findByText("a.txt");
     fireEvent.keyDown(window, { key: "2", altKey: true });
 
-    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
-    expect(api.hideWindow).toHaveBeenCalledOnce();
+    expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.hideWindow).not.toHaveBeenCalled();
   });
 
   it("Ctrl+数字不再打开对应结果", async () => {
@@ -286,7 +287,7 @@ describe("App", () => {
     await screen.findByText("a.txt");
     fireEvent.keyDown(window, { key: "2", ctrlKey: true });
 
-    expect(api.openPath).not.toHaveBeenCalled();
+    expect(api.openPathAndHide).not.toHaveBeenCalled();
     expect(api.hideWindow).not.toHaveBeenCalled();
   });
 
@@ -300,8 +301,8 @@ describe("App", () => {
 
     fireEvent.click(screen.getAllByRole("option")[1]);
 
-    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
-    expect(api.hideWindow).toHaveBeenCalledOnce();
+    expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.hideWindow).not.toHaveBeenCalled();
   });
 
   it("opens a result location with right click", async () => {
@@ -315,7 +316,7 @@ describe("App", () => {
     fireEvent.contextMenu(screen.getAllByRole("option")[1]);
 
     expect(api.revealPath).toHaveBeenCalledWith("D:\\a.txt");
-    expect(api.openPath).not.toHaveBeenCalled();
+    expect(api.openPathAndHide).not.toHaveBeenCalled();
     expect(api.hideWindow).not.toHaveBeenCalled();
   });
 
@@ -329,7 +330,7 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: "Enter" });
 
-    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
   });
 
   it("pressing ArrowUp on the first result selects the last result", async () => {
@@ -343,7 +344,7 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "ArrowUp" });
     fireEvent.keyDown(window, { key: "Enter" });
 
-    expect(api.openPath).toHaveBeenCalledWith("D:\\a.txt");
+    expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
   });
 
   it("Alt+Enter 打开选中结果所在位置", async () => {
@@ -356,6 +357,7 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "Enter", altKey: true });
 
     expect(api.revealPath).toHaveBeenCalledWith("D:\\QQ");
+    expect(api.openPathAndHide).not.toHaveBeenCalled();
   });
 
   it("Ctrl+C 复制选中结果路径", async () => {
