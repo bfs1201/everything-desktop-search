@@ -11,15 +11,27 @@ const api = {
   copyPath: vi.fn(),
   hideWindow: vi.fn(),
   setExpanded: vi.fn(),
+  onWindowWillShow: vi.fn(),
+  onWindowHidden: vi.fn(),
   onWindowShown: vi.fn()
 };
 
+let windowWillShowCallback: (() => void) | undefined;
+let windowHiddenCallback: (() => void) | undefined;
 let windowShownCallback: (() => void) | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  windowWillShowCallback = undefined;
+  windowHiddenCallback = undefined;
   windowShownCallback = undefined;
   window.everythingSearch = api;
+  api.onWindowWillShow.mockImplementation((callback: () => void) => {
+    windowWillShowCallback = callback;
+  });
+  api.onWindowHidden.mockImplementation((callback: () => void) => {
+    windowHiddenCallback = callback;
+  });
   api.onWindowShown.mockImplementation((callback: () => void) => {
     windowShownCallback = callback;
   });
@@ -68,6 +80,11 @@ describe("App selection interactions", () => {
     });
 
     await screen.findByText("7.txt");
+    await act(async () => {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 0);
+      });
+    });
     expect(screen.queryByText("8.txt")).not.toBeInTheDocument();
 
     for (let index = 0; index < 8; index += 1) {
@@ -96,6 +113,11 @@ describe("App selection interactions", () => {
     });
 
     await screen.findByText("7.txt");
+    await act(async () => {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 0);
+      });
+    });
     expect(screen.queryByText("12.txt")).not.toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "ArrowUp" });
@@ -116,6 +138,7 @@ describe("App selection interactions", () => {
     await screen.findByText("a.txt");
 
     fireEvent.keyDown(window, { key: "ArrowDown" });
+    await waitFor(() => expect(screen.getByRole("option", { selected: true })).toHaveTextContent("a.txt"));
 
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }));
   });
@@ -127,12 +150,14 @@ describe("App", () => {
 
     await waitFor(() => expect(api.setExpanded).toHaveBeenLastCalledWith(false));
 
-    expect(screen.getByPlaceholderText("搜索文件、文件夹或路径")).toBeInTheDocument();
+    const input = screen.getByPlaceholderText("搜索文件、文件夹或路径");
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveAttribute("spellcheck", "false");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     expect(api.search).not.toHaveBeenCalled();
   });
 
-  it("窗口显示后下一轮仍把焦点放回搜索框并清空旧搜索", async () => {
+  it("窗口即将显示时先清空旧搜索，显示后再把焦点放回搜索框", async () => {
     const outsideButton = document.createElement("button");
     document.body.appendChild(outsideButton);
 
@@ -146,9 +171,17 @@ describe("App", () => {
       await screen.findByText("QQ");
 
       act(() => {
-        windowShownCallback?.();
+        windowWillShowCallback?.();
       });
       expect(input).toHaveValue("");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      outsideButton.focus();
+      expect(document.activeElement).toBe(outsideButton);
+
+      act(() => {
+        windowShownCallback?.();
+      });
       expect(document.activeElement).toBe(input);
 
       outsideButton.focus();
@@ -164,6 +197,23 @@ describe("App", () => {
     } finally {
       outsideButton.remove();
     }
+  });
+
+  it("窗口隐藏时也清空旧搜索，避免下次唤醒闪现旧内容", async () => {
+    render(<App />);
+    const input = screen.getByRole("textbox");
+
+    fireEvent.change(input, {
+      target: { value: "qq" }
+    });
+    await screen.findByText("QQ");
+
+    act(() => {
+      windowHiddenCallback?.();
+    });
+
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("按参考图布局渲染搜索结果", async () => {
@@ -263,6 +313,8 @@ describe("App", () => {
 
     expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\QQ");
     expect(api.hideWindow).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("Alt+数字打开对应结果", async () => {
@@ -276,6 +328,8 @@ describe("App", () => {
 
     expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
     expect(api.hideWindow).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("Ctrl+数字不再打开对应结果", async () => {
@@ -303,6 +357,8 @@ describe("App", () => {
 
     expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
     expect(api.hideWindow).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("opens a result location with right click", async () => {
@@ -328,6 +384,7 @@ describe("App", () => {
     });
     await screen.findByText("a.txt");
     fireEvent.keyDown(window, { key: "ArrowDown" });
+    await waitFor(() => expect(screen.getByRole("option", { selected: true })).toHaveTextContent("a.txt"));
     fireEvent.keyDown(window, { key: "Enter" });
 
     expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
@@ -342,6 +399,7 @@ describe("App", () => {
     await screen.findByText("a.txt");
 
     fireEvent.keyDown(window, { key: "ArrowUp" });
+    await waitFor(() => expect(screen.getByRole("option", { selected: true })).toHaveTextContent("a.txt"));
     fireEvent.keyDown(window, { key: "Enter" });
 
     expect(api.openPathAndHide).toHaveBeenCalledWith("D:\\a.txt");
@@ -375,10 +433,16 @@ describe("App", () => {
   it("按 Escape 隐藏窗口", async () => {
     render(<App />);
     await waitFor(() => expect(api.setExpanded).toHaveBeenLastCalledWith(false));
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "txt" }
+    });
+    await screen.findByText("QQ");
 
     fireEvent.keyDown(window, { key: "Escape" });
 
     expect(api.hideWindow).toHaveBeenCalledOnce();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("滚动到底部时加载下一页结果，并显示展示更多行", async () => {

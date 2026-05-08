@@ -120,30 +120,27 @@ describe("window behavior", () => {
     );
 
     expect(mainSource).toContain("forceForegroundWindow");
-    expect(focusFlow).toContain("await forceForegroundWindow");
+    expect(focusFlow).toContain("forceForegroundWindow");
     expect(focusFlow).toContain("window.getNativeWindowHandle()");
     expect(focusFlow.indexOf("window.setFocusable(true)")).toBeLessThan(focusFlow.indexOf("forceForegroundWindow"));
-    expect(showFlow).toContain("await focusLauncherWindow(mainWindow, expectedFocusGeneration)");
+    expect(showFlow).toContain("focusLauncherWindow(mainWindow, expectedFocusGeneration)");
     expect(showFlow).toContain("scheduleFocusRetries(mainWindow, expectedFocusGeneration)");
   });
 
-  it("原生前台激活等待后窗口已隐藏时不再重新聚焦", () => {
+  it("原生前台激活不阻塞窗口显示完成事件", () => {
     const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
-    const focusFlow = mainSource.slice(
-      mainSource.indexOf("function focusLauncherWindow"),
-      mainSource.indexOf("function scheduleFocusRetries")
+    const showFlow = mainSource.slice(
+      mainSource.indexOf("async function showAndFocusWindow"),
+      mainSource.indexOf("async function createWindow")
     );
 
-    expect(focusFlow).toContain("await forceForegroundWindow");
-    expect(focusFlow).toContain("window.isDestroyed()");
-    expect(focusFlow).toContain("!window.isVisible()");
-    const nativeFocusIndex = focusFlow.indexOf("await forceForegroundWindow");
-    const postNativeDestroyedGuardIndex = focusFlow.indexOf("window.isDestroyed()", nativeFocusIndex);
-    const postNativeVisibleGuardIndex = focusFlow.indexOf("!window.isVisible()", nativeFocusIndex);
-
-    expect(nativeFocusIndex).toBeLessThan(postNativeDestroyedGuardIndex);
-    expect(postNativeDestroyedGuardIndex).toBeLessThan(focusFlow.indexOf("app.focus()"));
-    expect(postNativeVisibleGuardIndex).toBeLessThan(focusFlow.indexOf("app.focus()"));
+    expect(showFlow).toContain('mainWindow.webContents.send("window-will-show")');
+    expect(showFlow).toContain('mainWindow.webContents.send("window-shown")');
+    expect(showFlow.indexOf('mainWindow.webContents.send("window-will-show")')).toBeLessThan(showFlow.indexOf("mainWindow.show()"));
+    expect(showFlow.indexOf("focusLauncherWindow(mainWindow, expectedFocusGeneration)")).toBeLessThan(
+      showFlow.indexOf('mainWindow.webContents.send("window-shown")')
+    );
+    expect(showFlow).not.toContain("await focusLauncherWindow");
   });
 
   it("焦点重试只允许当前显示代继续执行", () => {
@@ -170,6 +167,17 @@ describe("window behavior", () => {
     expect(retryFlow).toContain("focusLauncherWindow(window, expectedFocusGeneration)");
   });
 
+  it("隐藏窗口前通知渲染进程重置搜索状态，避免下次唤醒闪现旧内容", () => {
+    const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
+    const hideFlow = mainSource.slice(
+      mainSource.indexOf("async function hideLauncherWindow"),
+      mainSource.indexOf("async function showAndFocusWindow")
+    );
+
+    expect(hideFlow).toContain('window.webContents.send("window-hidden")');
+    expect(hideFlow.indexOf('window.webContents.send("window-hidden")')).toBeLessThan(hideFlow.indexOf("window.hide()"));
+  });
+
   it("IPC 隐藏窗口时也会让旧焦点重试失效", () => {
     const ipcSource = readFileSync(join(process.cwd(), "src/main/ipc.ts"), "utf-8");
     const hideFlow = ipcSource.slice(
@@ -180,6 +188,27 @@ describe("window behavior", () => {
     expect(ipcSource).toContain("advanceFocusGeneration");
     expect(hideFlow).toContain("advanceFocusGeneration()");
     expect(hideFlow.indexOf("advanceFocusGeneration()")).toBeLessThan(hideFlow.indexOf("window.blur()"));
+  });
+
+  it("IPC 关闭或打开结果隐藏窗口前也通知渲染进程清空本次搜索", () => {
+    const ipcSource = readFileSync(join(process.cwd(), "src/main/ipc.ts"), "utf-8");
+    const hideFlow = ipcSource.slice(
+      ipcSource.indexOf("async function hideLauncherWindow"),
+      ipcSource.indexOf("export function registerIpc")
+    );
+    const openAndHideFlow = ipcSource.slice(
+      ipcSource.indexOf('ipcMain.handle("open-path-and-hide"'),
+      ipcSource.indexOf('ipcMain.handle("reveal-path"')
+    );
+    const hideWindowFlow = ipcSource.slice(
+      ipcSource.indexOf('ipcMain.handle("hide-window"'),
+      ipcSource.indexOf('ipcMain.handle("set-expanded"')
+    );
+
+    expect(hideFlow).toContain('window.webContents.send("window-hidden")');
+    expect(hideFlow.indexOf('window.webContents.send("window-hidden")')).toBeLessThan(hideFlow.indexOf("window.hide()"));
+    expect(openAndHideFlow).toContain("hideLauncherWindow(window, { restorePreviousFocus: false })");
+    expect(hideWindowFlow).toContain("hideLauncherWindow(window)");
   });
 
   it("open-path-and-hide 打开结果时隐藏窗口但不恢复之前焦点", () => {

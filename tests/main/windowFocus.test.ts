@@ -1,123 +1,131 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const execFile = vi.fn();
+const load = vi.fn();
+const out = vi.fn((type: unknown) => ({ direction: "out", type }));
+const pointer = vi.fn((type: unknown) => ({ pointer: type }));
 
-vi.mock("node:child_process", () => ({
-  default: { execFile },
-  execFile
+const api = {
+  AttachThreadInput: vi.fn(),
+  BringWindowToTop: vi.fn(),
+  GetCurrentThreadId: vi.fn(),
+  GetForegroundWindow: vi.fn(),
+  GetWindowLongPtr: vi.fn(),
+  GetWindowThreadProcessId: vi.fn(),
+  IsWindow: vi.fn(),
+  IsWindowVisible: vi.fn(),
+  SetForegroundWindow: vi.fn(),
+  SetWindowLongPtr: vi.fn(),
+  SetWindowPos: vi.fn()
+};
+
+function apiFunction(name: string) {
+  return api[name.replace(/W$/, "") as keyof typeof api];
+}
+
+const user32 = {
+  func: vi.fn((_convention: string, name: string) => apiFunction(name))
+};
+
+const kernel32 = {
+  func: vi.fn((_convention: string, name: string) => apiFunction(name))
+};
+
+vi.mock("koffi", () => ({
+  default: {
+    load,
+    out,
+    pointer
+  }
 }));
 
-describe("window focus restore", () => {
+function nativeHandle(hwnd: number) {
+  const buffer = Buffer.alloc(8);
+  buffer.writeBigUInt64LE(BigInt(hwnd));
+  return buffer;
+}
+
+async function importWindowFocus() {
+  vi.resetModules();
+  return import("../../src/main/windowFocus");
+}
+
+describe("window focus native integration", () => {
   beforeEach(() => {
-    vi.resetModules();
     vi.clearAllMocks();
     Object.defineProperty(process, "platform", {
       value: "win32"
     });
-  });
-
-  it("captures the current foreground window handle through user32", async () => {
-    execFile.mockImplementation((_file, _args, _options, callback) => {
-      callback(undefined, "12345\r\n", "");
+    load.mockImplementation((library: string) => {
+      if (library === "user32.dll") {
+        return user32;
+      }
+      if (library === "kernel32.dll") {
+        return kernel32;
+      }
+      throw new Error(`Unexpected library ${library}`);
     });
-    const { capturePreviousForegroundWindow } = await import("../../src/main/windowFocus");
-
-    await capturePreviousForegroundWindow();
-
-    expect(execFile).toHaveBeenCalledWith(
-      "powershell.exe",
-      expect.arrayContaining(["-NoProfile", "-NonInteractive", "-Command", expect.stringContaining("GetForegroundWindow")]),
-      expect.objectContaining({ windowsHide: true }),
-      expect.any(Function)
-    );
-  });
-
-  it("restores the captured foreground window handle through user32", async () => {
-    execFile
-      .mockImplementationOnce((_file, _args, _options, callback) => {
-        callback(undefined, "12345\r\n", "");
-      })
-      .mockImplementationOnce((_file, _args, _options, callback) => {
-        callback(undefined, "", "");
-      });
-    const { capturePreviousForegroundWindow, restorePreviousForegroundWindow } = await import("../../src/main/windowFocus");
-
-    await capturePreviousForegroundWindow();
-    await restorePreviousForegroundWindow();
-
-    expect(execFile).toHaveBeenLastCalledWith(
-      "powershell.exe",
-      expect.arrayContaining(["-NoProfile", "-NonInteractive", "-Command", expect.stringContaining("SetForegroundWindow")]),
-      expect.objectContaining({ windowsHide: true }),
-      expect.any(Function)
-    );
-  });
-
-  it("forces the visible launcher native window to the foreground using attached input threads", async () => {
-    execFile.mockImplementation((_file, _args, _options, callback) => {
-      callback(undefined, "", "");
+    api.AttachThreadInput.mockReturnValue(true);
+    api.BringWindowToTop.mockReturnValue(true);
+    api.GetCurrentThreadId.mockReturnValue(30);
+    api.GetForegroundWindow.mockReturnValue(10);
+    api.GetWindowLongPtr.mockReturnValue(0x00040000);
+    api.GetWindowThreadProcessId.mockImplementation((hwnd: number, processId: number[]) => {
+      processId[0] = hwnd + 1000;
+      return hwnd + 20;
     });
-    const nativeHandle = Buffer.alloc(8);
-    nativeHandle.writeBigUInt64LE(74565n);
-    const { forceForegroundWindow } = await import("../../src/main/windowFocus");
-
-    await forceForegroundWindow(nativeHandle);
-
-    const command = execFile.mock.calls[0][1].at(-1);
-    expect(execFile).toHaveBeenCalledWith(
-      "powershell.exe",
-      expect.arrayContaining(["-NoProfile", "-NonInteractive", "-Command", expect.any(String)]),
-      expect.objectContaining({ windowsHide: true }),
-      expect.any(Function)
-    );
-    expect(command).not.toContain("ShowWindowAsync");
-    expect(command).toContain("BringWindowToTop");
-    expect(command).toContain("SetForegroundWindow");
-    expect(command).toContain("GetForegroundWindow");
-    expect(command).toContain("IsWindowVisible");
-    expect(command).toContain("GetWindowThreadProcessId");
-    expect(command).toContain("GetCurrentThreadId");
-    expect(command).toContain("AttachThreadInput");
-    expect(command).toContain("if ([Win32.NativeWindow]::IsWindowVisible($hwnd))");
-    expect(command).toContain("[int64]74565");
-    expect(command).toContain("finally");
+    api.IsWindow.mockReturnValue(true);
+    api.IsWindowVisible.mockReturnValue(true);
+    api.SetForegroundWindow.mockReturnValue(true);
+    api.SetWindowLongPtr.mockReturnValue(0);
+    api.SetWindowPos.mockReturnValue(true);
   });
 
-  it("does not invoke native foreground activation for an invalid native handle", async () => {
-    const { forceForegroundWindow } = await import("../../src/main/windowFocus");
+  it("captures and restores the previous foreground window in-process", async () => {
+    const { capturePreviousForegroundWindow, restorePreviousForegroundWindow } = await importWindowFocus();
 
-    await forceForegroundWindow(Buffer.alloc(8));
-    await forceForegroundWindow(Buffer.alloc(2));
+    capturePreviousForegroundWindow();
+    restorePreviousForegroundWindow();
 
-    expect(execFile).not.toHaveBeenCalled();
+    expect(load).toHaveBeenCalledWith("user32.dll");
+    expect(load).toHaveBeenCalledWith("kernel32.dll");
+    expect(api.GetForegroundWindow).toHaveBeenCalledOnce();
+    expect(api.IsWindow).toHaveBeenCalledWith(10);
+    expect(api.SetForegroundWindow).toHaveBeenCalledWith(10);
   });
 
-  it("marks the launcher native window as a tool window so Windows keeps it out of the taskbar", async () => {
-    execFile.mockImplementation((_file, _args, _options, callback) => {
-      callback(undefined, "", "");
-    });
-    const nativeHandle = Buffer.alloc(8);
-    nativeHandle.writeBigUInt64LE(74565n);
-    const { hideNativeWindowFromTaskbar } = await import("../../src/main/windowFocus");
+  it("forces only visible native windows to the foreground and detaches input queues", async () => {
+    const { forceForegroundWindow } = await importWindowFocus();
 
-    await hideNativeWindowFromTaskbar(nativeHandle);
+    forceForegroundWindow(nativeHandle(50));
 
-    const command = execFile.mock.calls[0][1].at(-1);
-    expect(command).toContain("GetWindowLongPtr");
-    expect(command).toContain("SetWindowLongPtr");
-    expect(command).toContain("SetWindowPos");
-    expect(command).toContain("WS_EX_APPWINDOW");
-    expect(command).toContain("WS_EX_TOOLWINDOW");
-    expect(command).toContain("SWP_FRAMECHANGED");
-    expect(command).toContain("[int64]74565");
+    expect(api.IsWindowVisible).toHaveBeenCalledWith(50);
+    expect(api.GetWindowThreadProcessId).toHaveBeenCalledWith(10, expect.any(Array));
+    expect(api.GetWindowThreadProcessId).toHaveBeenCalledWith(50, expect.any(Array));
+    expect(api.AttachThreadInput).toHaveBeenNthCalledWith(1, 30, 70, true);
+    expect(api.BringWindowToTop).toHaveBeenCalledWith(50);
+    expect(api.SetForegroundWindow).toHaveBeenCalledWith(50);
+    expect(api.AttachThreadInput).toHaveBeenNthCalledWith(2, 30, 70, false);
   });
 
-  it("does not invoke native taskbar hiding for an invalid native handle", async () => {
-    const { hideNativeWindowFromTaskbar } = await import("../../src/main/windowFocus");
+  it("skips foreground activation for invisible or invalid native windows", async () => {
+    const { forceForegroundWindow } = await importWindowFocus();
 
-    await hideNativeWindowFromTaskbar(Buffer.alloc(8));
-    await hideNativeWindowFromTaskbar(Buffer.alloc(2));
+    api.IsWindowVisible.mockReturnValue(false);
+    forceForegroundWindow(nativeHandle(50));
+    forceForegroundWindow(Buffer.alloc(2));
 
-    expect(execFile).not.toHaveBeenCalled();
+    expect(api.BringWindowToTop).not.toHaveBeenCalled();
+    expect(api.SetForegroundWindow).not.toHaveBeenCalled();
+  });
+
+  it("marks the launcher native window as a tool window", async () => {
+    const { hideNativeWindowFromTaskbar } = await importWindowFocus();
+
+    hideNativeWindowFromTaskbar(nativeHandle(50));
+
+    expect(api.IsWindow).toHaveBeenCalledWith(50);
+    expect(api.GetWindowLongPtr).toHaveBeenCalledWith(50, -20);
+    expect(api.SetWindowLongPtr).toHaveBeenCalledWith(50, -20, 0x00000080);
+    expect(api.SetWindowPos).toHaveBeenCalledWith(50, 0, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0020);
   });
 });

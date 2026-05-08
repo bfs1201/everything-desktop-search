@@ -1,68 +1,113 @@
-import { execFile } from "node:child_process";
+import koffi from "koffi";
 
-let previousForegroundWindowHandle: string | undefined;
+let previousForegroundWindowHandle: number | undefined;
 
-function runPowerShell(command: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
-      { timeout: 1200, windowsHide: true },
-      (error, stdout) => {
-        if (error) {
-          reject(error);
-          return;
-        }
+const GWL_EXSTYLE = -20;
+const WS_EX_APPWINDOW = 0x00040000;
+const WS_EX_TOOLWINDOW = 0x00000080;
+const SWP_NOSIZE = 0x0001;
+const SWP_NOMOVE = 0x0002;
+const SWP_NOZORDER = 0x0004;
+const SWP_FRAMECHANGED = 0x0020;
 
-        resolve(String(stdout));
-      }
-    );
-  });
+type Win32Api = {
+  AttachThreadInput: (idAttach: number, idAttachTo: number, attach: boolean) => boolean;
+  BringWindowToTop: (hwnd: number) => boolean;
+  GetCurrentThreadId: () => number;
+  GetForegroundWindow: () => number;
+  GetWindowLongPtr: (hwnd: number, index: number) => number;
+  GetWindowThreadProcessId: (hwnd: number, processId: number[]) => number;
+  IsWindow: (hwnd: number) => boolean;
+  IsWindowVisible: (hwnd: number) => boolean;
+  SetForegroundWindow: (hwnd: number) => boolean;
+  SetWindowLongPtr: (hwnd: number, index: number, value: number) => number;
+  SetWindowPos: (hwnd: number, insertAfter: number, x: number, y: number, cx: number, cy: number, flags: number) => boolean;
+};
+
+let cachedWin32Api: Win32Api | undefined;
+
+function getWin32Api(): Win32Api | undefined {
+  if (process.platform !== "win32") {
+    return undefined;
+  }
+
+  if (cachedWin32Api) {
+    return cachedWin32Api;
+  }
+
+  try {
+    const user32 = koffi.load("user32.dll");
+    const kernel32 = koffi.load("kernel32.dll");
+    cachedWin32Api = {
+      AttachThreadInput: user32.func("__stdcall", "AttachThreadInput", "bool", ["uint32", "uint32", "bool"]) as Win32Api["AttachThreadInput"],
+      BringWindowToTop: user32.func("__stdcall", "BringWindowToTop", "bool", ["uintptr_t"]) as Win32Api["BringWindowToTop"],
+      GetCurrentThreadId: kernel32.func("__stdcall", "GetCurrentThreadId", "uint32", []) as Win32Api["GetCurrentThreadId"],
+      GetForegroundWindow: user32.func("__stdcall", "GetForegroundWindow", "uintptr_t", []) as Win32Api["GetForegroundWindow"],
+      GetWindowLongPtr: user32.func("__stdcall", "GetWindowLongPtrW", "intptr_t", ["uintptr_t", "int"]) as Win32Api["GetWindowLongPtr"],
+      GetWindowThreadProcessId: user32.func("__stdcall", "GetWindowThreadProcessId", "uint32", [
+        "uintptr_t",
+        koffi.out(koffi.pointer("uint32"))
+      ]) as Win32Api["GetWindowThreadProcessId"],
+      IsWindow: user32.func("__stdcall", "IsWindow", "bool", ["uintptr_t"]) as Win32Api["IsWindow"],
+      IsWindowVisible: user32.func("__stdcall", "IsWindowVisible", "bool", ["uintptr_t"]) as Win32Api["IsWindowVisible"],
+      SetForegroundWindow: user32.func("__stdcall", "SetForegroundWindow", "bool", ["uintptr_t"]) as Win32Api["SetForegroundWindow"],
+      SetWindowLongPtr: user32.func("__stdcall", "SetWindowLongPtrW", "intptr_t", [
+        "uintptr_t",
+        "int",
+        "intptr_t"
+      ]) as Win32Api["SetWindowLongPtr"],
+      SetWindowPos: user32.func("__stdcall", "SetWindowPos", "bool", [
+        "uintptr_t",
+        "uintptr_t",
+        "int",
+        "int",
+        "int",
+        "int",
+        "uint32"
+      ]) as Win32Api["SetWindowPos"]
+    };
+    return cachedWin32Api;
+  } catch {
+    return undefined;
+  }
 }
 
-function user32Definition(members: string) {
-  return `
-Add-Type -Namespace Win32 -Name NativeWindow -MemberDefinition @'
-${members}
-'@;
-`;
-}
-
-function hwndFromNativeHandle(nativeHandle: Buffer): string | undefined {
+function hwndFromNativeHandle(nativeHandle: Buffer): number | undefined {
   if (nativeHandle.length >= 8) {
     const hwnd = nativeHandle.readBigUInt64LE(0);
-    return hwnd > 0n ? hwnd.toString() : undefined;
+    return hwnd > 0n && hwnd <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(hwnd) : undefined;
   }
 
   if (nativeHandle.length >= 4) {
     const hwnd = nativeHandle.readUInt32LE(0);
-    return hwnd > 0 ? String(hwnd) : undefined;
+    return hwnd > 0 ? hwnd : undefined;
   }
 
   return undefined;
 }
 
-export async function capturePreviousForegroundWindow() {
-  if (process.platform !== "win32") {
+function getWindowThreadId(api: Win32Api, hwnd: number) {
+  const processId = [0];
+  return api.GetWindowThreadProcessId(hwnd, processId);
+}
+
+export function capturePreviousForegroundWindow() {
+  const api = getWin32Api();
+  if (!api) {
     return;
   }
 
   try {
-    const stdout = await runPowerShell(
-      `${user32Definition('[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();')}
-[Win32.NativeWindow]::GetForegroundWindow().ToInt64()`
-    );
-    const handle = stdout.trim();
-    if (/^[1-9]\d*$/.test(handle)) {
-      previousForegroundWindowHandle = handle;
-    }
+    const handle = api.GetForegroundWindow();
+    previousForegroundWindowHandle = handle && api.IsWindow(handle) ? handle : undefined;
   } catch {
     previousForegroundWindowHandle = undefined;
   }
 }
 
-export async function restorePreviousForegroundWindow() {
-  if (process.platform !== "win32" || !previousForegroundWindowHandle) {
+export function restorePreviousForegroundWindow() {
+  const api = getWin32Api();
+  if (!api || !previousForegroundWindowHandle) {
     return;
   }
 
@@ -70,115 +115,78 @@ export async function restorePreviousForegroundWindow() {
   previousForegroundWindowHandle = undefined;
 
   try {
-    await runPowerShell(
-      `${user32Definition(`
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsWindow(System.IntPtr hWnd);
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr hWnd);
-`)}
-$hwnd = [System.IntPtr]([int64]${handle});
-if ([Win32.NativeWindow]::IsWindow($hwnd)) {
-  [Win32.NativeWindow]::SetForegroundWindow($hwnd) | Out-Null
-}`
-    );
+    if (api.IsWindow(handle)) {
+      api.SetForegroundWindow(handle);
+    }
   } catch {
     // Restoring focus is best-effort; hiding the launcher should still complete.
   }
 }
 
-export async function forceForegroundWindow(nativeHandle: Buffer): Promise<void> {
-  if (process.platform !== "win32") {
+export function forceForegroundWindow(nativeHandle: Buffer): void {
+  const api = getWin32Api();
+  const hwnd = hwndFromNativeHandle(nativeHandle);
+  if (!api || !hwnd) {
     return;
   }
 
-  const handle = hwndFromNativeHandle(nativeHandle);
-  if (!handle) {
-    return;
-  }
+  let attachedForeground = false;
+  let attachedTarget = false;
+  let currentThreadId = 0;
+  let foregroundThreadId = 0;
+  let targetThreadId = 0;
 
   try {
-    await runPowerShell(
-      `${user32Definition(`
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool BringWindowToTop(System.IntPtr hWnd);
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr hWnd);
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr hWnd);
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId);
-[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-`)}
-$hwnd = [System.IntPtr]([int64]${handle});
-[uint32]$currentThreadId = 0;
-[uint32]$foregroundThreadId = 0;
-[uint32]$targetThreadId = 0;
-$attachedForeground = $false;
-$attachedTarget = $false;
-try {
-  [uint32]$foregroundProcessId = 0;
-  [uint32]$targetProcessId = 0;
-  $foreground = [Win32.NativeWindow]::GetForegroundWindow();
-  if ($foreground -ne [System.IntPtr]::Zero) {
-    $foregroundThreadId = [Win32.NativeWindow]::GetWindowThreadProcessId($foreground, [ref]$foregroundProcessId);
-  }
-  $targetThreadId = [Win32.NativeWindow]::GetWindowThreadProcessId($hwnd, [ref]$targetProcessId);
-  $currentThreadId = [Win32.NativeWindow]::GetCurrentThreadId();
-  if ($currentThreadId -ne 0 -and $foregroundThreadId -ne 0 -and $currentThreadId -ne $foregroundThreadId) {
-    $attachedForeground = [Win32.NativeWindow]::AttachThreadInput($currentThreadId, $foregroundThreadId, $true);
-  }
-  if ($currentThreadId -ne 0 -and $targetThreadId -ne 0 -and $currentThreadId -ne $targetThreadId) {
-    $attachedTarget = [Win32.NativeWindow]::AttachThreadInput($currentThreadId, $targetThreadId, $true);
-  }
-  if ([Win32.NativeWindow]::IsWindowVisible($hwnd)) {
-    [Win32.NativeWindow]::BringWindowToTop($hwnd) | Out-Null;
-    [Win32.NativeWindow]::SetForegroundWindow($hwnd) | Out-Null;
-  }
-} catch {
-} finally {
-  if ($attachedTarget) {
-    [Win32.NativeWindow]::AttachThreadInput($currentThreadId, $targetThreadId, $false) | Out-Null;
-  }
-  if ($attachedForeground) {
-    [Win32.NativeWindow]::AttachThreadInput($currentThreadId, $foregroundThreadId, $false) | Out-Null;
-  }
-}`
-    );
+    if (!api.IsWindowVisible(hwnd)) {
+      return;
+    }
+
+    const foreground = api.GetForegroundWindow();
+    foregroundThreadId = foreground ? getWindowThreadId(api, foreground) : 0;
+    targetThreadId = getWindowThreadId(api, hwnd);
+    currentThreadId = api.GetCurrentThreadId();
+
+    if (currentThreadId !== 0 && foregroundThreadId !== 0 && currentThreadId !== foregroundThreadId) {
+      attachedForeground = api.AttachThreadInput(currentThreadId, foregroundThreadId, true);
+    }
+    if (currentThreadId !== 0 && targetThreadId !== 0 && currentThreadId !== targetThreadId) {
+      attachedTarget = api.AttachThreadInput(currentThreadId, targetThreadId, true);
+    }
+
+    api.BringWindowToTop(hwnd);
+    api.SetForegroundWindow(hwnd);
   } catch {
     // Foreground activation is best-effort; Electron focus retries still run.
+  } finally {
+    try {
+      if (attachedTarget) {
+        api.AttachThreadInput(currentThreadId, targetThreadId, false);
+      }
+      if (attachedForeground) {
+        api.AttachThreadInput(currentThreadId, foregroundThreadId, false);
+      }
+    } catch {
+      // Detaching input queues is best-effort.
+    }
   }
 }
 
-export async function hideNativeWindowFromTaskbar(nativeHandle: Buffer): Promise<void> {
-  if (process.platform !== "win32") {
-    return;
-  }
-
-  const handle = hwndFromNativeHandle(nativeHandle);
-  if (!handle) {
+export function hideNativeWindowFromTaskbar(nativeHandle: Buffer): void {
+  const api = getWin32Api();
+  const hwnd = hwndFromNativeHandle(nativeHandle);
+  if (!api || !hwnd) {
     return;
   }
 
   try {
-    await runPowerShell(
-      `${user32Definition(`
-[System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern System.IntPtr GetWindowLongPtr(System.IntPtr hWnd, int nIndex);
-[System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern System.IntPtr SetWindowLongPtr(System.IntPtr hWnd, int nIndex, System.IntPtr dwNewLong);
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr hWnd, System.IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsWindow(System.IntPtr hWnd);
-`)}
-$hwnd = [System.IntPtr]([int64]${handle});
-$GWL_EXSTYLE = -20;
-$WS_EX_APPWINDOW = [int64]0x00040000;
-$WS_EX_TOOLWINDOW = [int64]0x00000080;
-$SWP_NOSIZE = [uint32]0x0001;
-$SWP_NOMOVE = [uint32]0x0002;
-$SWP_NOZORDER = [uint32]0x0004;
-$SWP_FRAMECHANGED = [uint32]0x0020;
-if ([Win32.NativeWindow]::IsWindow($hwnd)) {
-  $style = [Win32.NativeWindow]::GetWindowLongPtr($hwnd, $GWL_EXSTYLE).ToInt64();
-  $newStyle = [System.IntPtr](($style -band (-bnot $WS_EX_APPWINDOW)) -bor $WS_EX_TOOLWINDOW);
-  [Win32.NativeWindow]::SetWindowLongPtr($hwnd, $GWL_EXSTYLE, $newStyle) | Out-Null;
-  [Win32.NativeWindow]::SetWindowPos($hwnd, [System.IntPtr]::Zero, 0, 0, 0, 0, $SWP_NOMOVE -bor $SWP_NOSIZE -bor $SWP_NOZORDER -bor $SWP_FRAMECHANGED) | Out-Null;
-}`
-    );
+    if (!api.IsWindow(hwnd)) {
+      return;
+    }
+
+    const style = api.GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    const newStyle = (style & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
+    api.SetWindowLongPtr(hwnd, GWL_EXSTYLE, newStyle);
+    api.SetWindowPos(hwnd, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
   } catch {
     // Taskbar hiding is best-effort; Electron skipTaskbar remains active.
   }

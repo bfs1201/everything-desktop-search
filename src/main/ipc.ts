@@ -27,6 +27,7 @@ const getFileIcon = createFileIconResolver({
 async function hideLauncherWindow(window: BrowserWindow, options: { restorePreviousFocus?: boolean } = {}) {
   const { restorePreviousFocus = true } = options;
   advanceFocusGeneration();
+  window.webContents.send("window-hidden");
   window.blur();
   window.hide();
   window.setFocusable(false);

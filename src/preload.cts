@@ -26,8 +26,14 @@ const api = {
   setExpanded(expanded: boolean): Promise<void> {
     return ipcRenderer.invoke("set-expanded", expanded);
   },
+  onWindowWillShow(callback: () => void) {
+    ipcRenderer.on("window-will-show", () => callback());
+  },
+  onWindowHidden(callback: () => void) {
+    ipcRenderer.on("window-hidden", () => callback());
+  },
   onWindowShown(callback: () => void) {
-    ipcRenderer.on("window-shown", callback);
+    ipcRenderer.on("window-shown", () => callback());
   }
 };
 

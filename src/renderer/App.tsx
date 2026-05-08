@@ -69,22 +69,41 @@ export default function App() {
   const selected = useMemo(() => results[selectedIndex], [results, selectedIndex]);
   const hasMore = visibleCount < results.length || canLoadMore;
 
+  function resetSearchState() {
+    setQuery("");
+    setResults([]);
+    setVisibleCount(PAGE_SIZE);
+    setSelectedIndex(0);
+    setError("");
+    setIsLoading(false);
+    setIsLoadingMore(false);
+    setCanLoadMore(false);
+    setNextOffset(undefined);
+  }
+
+  function openResultAndClear(result: SearchResult) {
+    resetSearchState();
+    void window.everythingSearch.openPathAndHide(result.path);
+  }
+
+  function hideWindowAndClear() {
+    resetSearchState();
+    window.everythingSearch.hideWindow();
+  }
+
   useEffect(() => {
     function focusSearchInput() {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
 
+    window.everythingSearch.onWindowWillShow(() => {
+      resetSearchState();
+    });
+    window.everythingSearch.onWindowHidden(() => {
+      resetSearchState();
+    });
     window.everythingSearch.onWindowShown(() => {
-      setQuery("");
-      setResults([]);
-      setVisibleCount(PAGE_SIZE);
-      setSelectedIndex(0);
-      setError("");
-      setIsLoading(false);
-      setIsLoadingMore(false);
-      setCanLoadMore(false);
-      setNextOffset(undefined);
       focusSearchInput();
       window.setTimeout(focusSearchInput, 0);
     });
@@ -141,7 +160,7 @@ export default function App() {
         const result = visibleResults[number - 1];
         if (result) {
           event.preventDefault();
-          void window.everythingSearch.openPathAndHide(result.path);
+          openResultAndClear(result);
         }
       }
       if (event.ctrlKey && event.key === "9" && hasMore) {
@@ -150,7 +169,7 @@ export default function App() {
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        window.everythingSearch.hideWindow();
+        hideWindowAndClear();
       }
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -177,7 +196,7 @@ export default function App() {
         if (event.altKey) {
           window.everythingSearch.revealPath(selected.path);
         } else {
-          void window.everythingSearch.openPathAndHide(selected.path);
+          openResultAndClear(selected);
         }
       }
       if (event.key.toLowerCase() === "c" && event.ctrlKey && selected) {
@@ -211,7 +230,7 @@ export default function App() {
   }
 
   function openResult(result: SearchResult) {
-    void window.everythingSearch.openPathAndHide(result.path);
+    openResultAndClear(result);
   }
 
   function revealResult(event: React.MouseEvent, result: SearchResult) {
@@ -236,6 +255,7 @@ export default function App() {
             value={query}
             placeholder="搜索文件、文件夹或路径"
             onChange={(event) => setQuery(event.target.value)}
+            spellCheck={false}
             autoFocus
           />
           <span className="searchWatermark">⌕</span>

@@ -32,12 +32,12 @@ function positionWindow(window: BrowserWindow, expanded = false) {
   });
 }
 
-async function focusLauncherWindow(window: BrowserWindow, expectedFocusGeneration = getFocusGeneration()) {
+function focusLauncherWindow(window: BrowserWindow, expectedFocusGeneration = getFocusGeneration()) {
   if (window.isDestroyed() || !isCurrentFocusGeneration(expectedFocusGeneration)) {
     return;
   }
   window.setFocusable(true);
-  await forceForegroundWindow(window.getNativeWindowHandle());
+  forceForegroundWindow(window.getNativeWindowHandle());
   if (window.isDestroyed() || !window.isVisible() || !isCurrentFocusGeneration(expectedFocusGeneration)) {
     return;
   }
@@ -63,7 +63,7 @@ function scheduleFocusRetries(window: BrowserWindow, expectedFocusGeneration: nu
         return;
       }
       if (!window.isDestroyed() && window.isVisible()) {
-        void focusLauncherWindow(window, expectedFocusGeneration).catch(() => undefined);
+        focusLauncherWindow(window, expectedFocusGeneration);
       }
     }, delayMs);
   }
@@ -72,6 +72,7 @@ function scheduleFocusRetries(window: BrowserWindow, expectedFocusGeneration: nu
 async function hideLauncherWindow(window: BrowserWindow, options: { restorePreviousFocus?: boolean } = {}) {
   const { restorePreviousFocus = true } = options;
   advanceFocusGeneration();
+  window.webContents.send("window-hidden");
   window.blur();
   window.hide();
   window.setFocusable(false);
@@ -87,11 +88,12 @@ async function showAndFocusWindow() {
 
   mainWindow.setFocusable(true);
   mainWindow.setSkipTaskbar(true);
-  await hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
+  hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
   if (!mainWindow.isVisible()) {
-    await capturePreviousForegroundWindow();
+    capturePreviousForegroundWindow();
   }
   const expectedFocusGeneration = advanceFocusGeneration();
+  mainWindow.webContents.send("window-will-show");
   isShowingWindow = true;
   if (showGraceTimer) {
     clearTimeout(showGraceTimer);
@@ -109,7 +111,7 @@ async function showAndFocusWindow() {
   void hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
   mainWindow.moveTop();
   mainWindow.setSkipTaskbar(true);
-  await focusLauncherWindow(mainWindow, expectedFocusGeneration);
+  focusLauncherWindow(mainWindow, expectedFocusGeneration);
   scheduleFocusRetries(mainWindow, expectedFocusGeneration);
   showGraceTimer = setTimeout(() => {
     isShowingWindow = false;
@@ -134,7 +136,7 @@ async function createWindow() {
     }
   });
   mainWindow.setSkipTaskbar(true);
-  await hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
+  hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
   mainWindow.on("show", () => {
     if (mainWindow) {
       mainWindow.setSkipTaskbar(true);
