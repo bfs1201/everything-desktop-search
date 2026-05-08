@@ -54,6 +54,60 @@ describe("window behavior", () => {
     expect(mainSource).not.toContain("if (mainWindow.isVisible()) {\n    mainWindow.hide();");
   });
 
+  it("启动和唤醒后都强制隐藏任务栏图标", () => {
+    const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
+    const showFlow = mainSource.slice(
+      mainSource.indexOf("async function showAndFocusWindow"),
+      mainSource.indexOf("async function createWindow")
+    );
+    const focusFlow = mainSource.slice(
+      mainSource.indexOf("function focusLauncherWindow"),
+      mainSource.indexOf("function scheduleFocusRetries")
+    );
+    const createFlow = mainSource.slice(
+      mainSource.indexOf("async function createWindow"),
+      mainSource.indexOf("function keyNameFromCode")
+    );
+
+    expect(createFlow).toContain("skipTaskbar: true");
+    expect(createFlow).toContain('mainWindow.on("show"');
+    expect(createFlow).toContain("mainWindow.setSkipTaskbar(true)");
+    expect(createFlow).toContain("hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle())");
+    expect(showFlow).toContain("mainWindow.setSkipTaskbar(true)");
+    expect(showFlow).toContain("hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle())");
+    expect(showFlow.indexOf("mainWindow.setSkipTaskbar(true)")).toBeLessThan(showFlow.indexOf("mainWindow.show()"));
+    expect(showFlow.lastIndexOf("mainWindow.setSkipTaskbar(true)")).toBeGreaterThan(showFlow.indexOf("mainWindow.show()"));
+    expect(focusFlow).toContain("window.setSkipTaskbar(true)");
+    expect(focusFlow).toContain("hideNativeWindowFromTaskbar(window.getNativeWindowHandle())");
+    expect(focusFlow.indexOf("window.moveTop()")).toBeLessThan(focusFlow.indexOf("window.setSkipTaskbar(true)"));
+  });
+
+  it("创建托盘菜单作为唯一常驻入口", () => {
+    const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
+    const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf-8")) as {
+      build: { files: string[] };
+    };
+    const trayFlow = mainSource.slice(
+      mainSource.indexOf("function createTray"),
+      mainSource.indexOf("function keyNameFromCode")
+    );
+
+    expect(mainSource).toContain("Tray");
+    expect(mainSource).toContain("Menu");
+    expect(mainSource).toContain("nativeImage");
+    expect(mainSource).toContain("let tray: Tray | null = null");
+    expect(trayFlow).toContain("assets");
+    expect(trayFlow).toContain("icon.ico");
+    expect(trayFlow).toContain("显示搜索");
+    expect(trayFlow).toContain("showAndFocusWindow()");
+    expect(trayFlow).toContain("设置");
+    expect(trayFlow).toContain("enabled: false");
+    expect(trayFlow).toContain("退出");
+    expect(trayFlow).toContain("app.quit()");
+    expect(mainSource).toContain("createTray()");
+    expect(packageJson.build.files).toContain("assets/**/*");
+  });
+
   it("双击 Ctrl 显示窗口时使用原生 HWND 强制前台激活", () => {
     const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
     const focusFlow = mainSource.slice(

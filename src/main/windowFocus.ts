@@ -145,3 +145,41 @@ try {
     // Foreground activation is best-effort; Electron focus retries still run.
   }
 }
+
+export async function hideNativeWindowFromTaskbar(nativeHandle: Buffer): Promise<void> {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const handle = hwndFromNativeHandle(nativeHandle);
+  if (!handle) {
+    return;
+  }
+
+  try {
+    await runPowerShell(
+      `${user32Definition(`
+[System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern System.IntPtr GetWindowLongPtr(System.IntPtr hWnd, int nIndex);
+[System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern System.IntPtr SetWindowLongPtr(System.IntPtr hWnd, int nIndex, System.IntPtr dwNewLong);
+[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr hWnd, System.IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsWindow(System.IntPtr hWnd);
+`)}
+$hwnd = [System.IntPtr]([int64]${handle});
+$GWL_EXSTYLE = -20;
+$WS_EX_APPWINDOW = [int64]0x00040000;
+$WS_EX_TOOLWINDOW = [int64]0x00000080;
+$SWP_NOSIZE = [uint32]0x0001;
+$SWP_NOMOVE = [uint32]0x0002;
+$SWP_NOZORDER = [uint32]0x0004;
+$SWP_FRAMECHANGED = [uint32]0x0020;
+if ([Win32.NativeWindow]::IsWindow($hwnd)) {
+  $style = [Win32.NativeWindow]::GetWindowLongPtr($hwnd, $GWL_EXSTYLE).ToInt64();
+  $newStyle = [System.IntPtr](($style -band (-bnot $WS_EX_APPWINDOW)) -bor $WS_EX_TOOLWINDOW);
+  [Win32.NativeWindow]::SetWindowLongPtr($hwnd, $GWL_EXSTYLE, $newStyle) | Out-Null;
+  [Win32.NativeWindow]::SetWindowPos($hwnd, [System.IntPtr]::Zero, 0, 0, 0, 0, $SWP_NOMOVE -bor $SWP_NOSIZE -bor $SWP_NOZORDER -bor $SWP_FRAMECHANGED) | Out-Null;
+}`
+    );
+  } catch {
+    // Taskbar hiding is best-effort; Electron skipTaskbar remains active.
+  }
+}

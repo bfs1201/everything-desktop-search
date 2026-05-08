@@ -1,13 +1,19 @@
-import { BrowserWindow, app, screen } from "electron";
+import { BrowserWindow, Menu, Tray, app, nativeImage, screen } from "electron";
 import path from "node:path";
 import { UiohookKey, uIOhook } from "uiohook-napi";
 import { advanceFocusGeneration, getFocusGeneration, isCurrentFocusGeneration } from "./focusGeneration.js";
 import { createDoubleCtrlDetector } from "./hotkeyDetector.js";
 import { registerIpc } from "./ipc.js";
 import { shouldSuppressFocusRestoreForResultOpening } from "./resultOpeningFocus.js";
-import { capturePreviousForegroundWindow, forceForegroundWindow, restorePreviousForegroundWindow } from "./windowFocus.js";
+import {
+  capturePreviousForegroundWindow,
+  forceForegroundWindow,
+  hideNativeWindowFromTaskbar,
+  restorePreviousForegroundWindow
+} from "./windowFocus.js";
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let isShowingWindow = false;
 let showGraceTimer: NodeJS.Timeout | null = null;
 const WINDOW_WIDTH = 720;
@@ -43,6 +49,8 @@ async function focusLauncherWindow(window: BrowserWindow, expectedFocusGeneratio
     window.setAlwaysOnTop(false);
     window.setAlwaysOnTop(true);
     window.moveTop();
+    window.setSkipTaskbar(true);
+    void hideNativeWindowFromTaskbar(window.getNativeWindowHandle());
     window.focus();
     window.webContents.focus();
   }
@@ -78,6 +86,8 @@ async function showAndFocusWindow() {
   }
 
   mainWindow.setFocusable(true);
+  mainWindow.setSkipTaskbar(true);
+  await hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
   if (!mainWindow.isVisible()) {
     await capturePreviousForegroundWindow();
   }
@@ -88,11 +98,17 @@ async function showAndFocusWindow() {
   }
   positionWindow(mainWindow, false);
   if (mainWindow.isMinimized()) {
+    mainWindow.setSkipTaskbar(true);
     mainWindow.restore();
+    mainWindow.setSkipTaskbar(true);
   }
   mainWindow.setAlwaysOnTop(true);
+  mainWindow.setSkipTaskbar(true);
   mainWindow.show();
+  mainWindow.setSkipTaskbar(true);
+  void hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
   mainWindow.moveTop();
+  mainWindow.setSkipTaskbar(true);
   await focusLauncherWindow(mainWindow, expectedFocusGeneration);
   scheduleFocusRetries(mainWindow, expectedFocusGeneration);
   showGraceTimer = setTimeout(() => {
@@ -117,6 +133,14 @@ async function createWindow() {
       nodeIntegration: false
     }
   });
+  mainWindow.setSkipTaskbar(true);
+  await hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
+  mainWindow.on("show", () => {
+    if (mainWindow) {
+      mainWindow.setSkipTaskbar(true);
+      void hideNativeWindowFromTaskbar(mainWindow.getNativeWindowHandle());
+    }
+  });
   mainWindow.on("blur", () => {
     if (isShowingWindow) {
       return;
@@ -130,6 +154,36 @@ async function createWindow() {
     }
   });
   await mainWindow.loadFile(path.join(app.getAppPath(), "dist/renderer/index.html"));
+}
+
+function createTray() {
+  const icon = nativeImage.createFromPath(path.join(app.getAppPath(), "assets", "icon.ico"));
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "显示搜索",
+      click: () => {
+        void showAndFocusWindow();
+      }
+    },
+    {
+      label: "设置",
+      enabled: false
+    },
+    { type: "separator" },
+    {
+      label: "退出",
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+
+  tray = new Tray(icon);
+  tray.setToolTip("Everything Quick Launcher");
+  tray.setContextMenu(menu);
+  tray.on("click", () => {
+    tray?.popUpContextMenu(menu);
+  });
 }
 
 function keyNameFromCode(keycode: number): string {
@@ -155,11 +209,14 @@ function registerKeyboardHook() {
 app.whenReady().then(async () => {
   registerIpc();
   await createWindow();
+  createTray();
   registerKeyboardHook();
 });
 
 app.on("window-all-closed", () => {});
 
 app.on("will-quit", () => {
+  tray?.destroy();
+  tray = null;
   uIOhook.stop();
 });

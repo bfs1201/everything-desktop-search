@@ -91,4 +91,33 @@ describe("window focus restore", () => {
 
     expect(execFile).not.toHaveBeenCalled();
   });
+
+  it("marks the launcher native window as a tool window so Windows keeps it out of the taskbar", async () => {
+    execFile.mockImplementation((_file, _args, _options, callback) => {
+      callback(undefined, "", "");
+    });
+    const nativeHandle = Buffer.alloc(8);
+    nativeHandle.writeBigUInt64LE(74565n);
+    const { hideNativeWindowFromTaskbar } = await import("../../src/main/windowFocus");
+
+    await hideNativeWindowFromTaskbar(nativeHandle);
+
+    const command = execFile.mock.calls[0][1].at(-1);
+    expect(command).toContain("GetWindowLongPtr");
+    expect(command).toContain("SetWindowLongPtr");
+    expect(command).toContain("SetWindowPos");
+    expect(command).toContain("WS_EX_APPWINDOW");
+    expect(command).toContain("WS_EX_TOOLWINDOW");
+    expect(command).toContain("SWP_FRAMECHANGED");
+    expect(command).toContain("[int64]74565");
+  });
+
+  it("does not invoke native taskbar hiding for an invalid native handle", async () => {
+    const { hideNativeWindowFromTaskbar } = await import("../../src/main/windowFocus");
+
+    await hideNativeWindowFromTaskbar(Buffer.alloc(8));
+    await hideNativeWindowFromTaskbar(Buffer.alloc(2));
+
+    expect(execFile).not.toHaveBeenCalled();
+  });
 });

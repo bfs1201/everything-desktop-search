@@ -274,7 +274,7 @@ export default function App() {
               );
             })}
             {hasMore ? (
-              <button className="moreResult" type="button" onClick={loadNextPage}>
+              <button className="moreResult" type="button" onClick={() => void loadNextPage()}>
                 <span className="moreIcon">↗</span>
                 <span className="moreText">
                   <span className="moreTitle">
