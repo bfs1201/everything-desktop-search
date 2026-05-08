@@ -3,8 +3,17 @@ import {
   decodeEverythingOutput,
   loadMoreEverything,
   parseEverythingOutput,
+  resolveEverythingPaths,
   searchEverything
 } from "../../src/main/everythingSearch";
+
+const EVERYTHING_DIR = "C:\\Tools\\Everything";
+const EVERYTHING_EXE = "C:\\Tools\\Everything\\Everything.exe";
+const ES_EXE = "C:\\Tools\\Everything\\es.exe";
+
+function env(overrides: Record<string, string | undefined> = {}) {
+  return { EVERYTHING_PATH: EVERYTHING_DIR, ...overrides };
+}
 
 describe("decodeEverythingOutput", () => {
   it("decodes GB18030 output from Everything CLI", () => {
@@ -14,6 +23,12 @@ describe("decodeEverythingOutput", () => {
     ]);
 
     expect(decodeEverythingOutput(output)).toBe("C:\\Users\\bfs\\桌面\\毕业设计");
+  });
+
+  it("decodes UTF-8 output from Everything CLI", () => {
+    const output = Buffer.from("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信", "utf8");
+
+    expect(decodeEverythingOutput(output)).toBe("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信");
   });
 });
 
@@ -135,6 +150,27 @@ describe("parseEverythingOutput", () => {
   });
 });
 
+describe("resolveEverythingPaths", () => {
+  it("derives Everything.exe and es.exe from the EVERYTHING_PATH directory", () => {
+    expect(resolveEverythingPaths(env())).toEqual({
+      everythingPath: EVERYTHING_EXE,
+      esPath: ES_EXE
+    });
+  });
+
+  it("rejects a missing EVERYTHING_PATH environment variable", () => {
+    expect(() => resolveEverythingPaths(env({ EVERYTHING_PATH: undefined }))).toThrow(
+      "请设置 EVERYTHING_PATH 环境变量，指向 Everything.exe 和 es.exe 所在目录。"
+    );
+  });
+
+  it("rejects EVERYTHING_PATH values that point to Everything.exe instead of its directory", () => {
+    expect(() => resolveEverythingPaths(env({ EVERYTHING_PATH: EVERYTHING_EXE }))).toThrow(
+      "EVERYTHING_PATH 必须是 Everything.exe 和 es.exe 所在目录，而不是 Everything.exe 文件路径。"
+    );
+  });
+});
+
 describe("searchEverything", () => {
   it("returns an empty result without spawning when query is blank", async () => {
     const execFile = vi.fn();
@@ -153,12 +189,13 @@ describe("searchEverything", () => {
       .mockResolvedValueOnce({
         stdout: Array.from({ length: 60 }, (_, index) => `D:\\file-${index}.txt`).join("\r\n"),
         stderr: ""
-      });
+      })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" });
     const startEverything = vi.fn();
 
-    const response = await searchEverything("file", { execFile, startEverything });
+    const response = await searchEverything("file", { execFile, startEverything, env: env() });
 
-    expect(execFile).toHaveBeenNthCalledWith(1, "D:\\Everything\\es.exe", [
+    expect(execFile).toHaveBeenNthCalledWith(1, ES_EXE, [
       "-n",
       "40",
       "-json",
@@ -170,7 +207,7 @@ describe("searchEverything", () => {
       "ext:exe;lnk",
       "file"
     ]);
-    expect(execFile).toHaveBeenNthCalledWith(2, "D:\\Everything\\es.exe", [
+    expect(execFile).toHaveBeenNthCalledWith(2, ES_EXE, [
       "-n",
       "60",
       "-offset",
@@ -183,6 +220,18 @@ describe("searchEverything", () => {
       "-date-run",
       "file"
     ]);
+    expect(execFile).toHaveBeenNthCalledWith(3, ES_EXE, [
+      "-n",
+      "120",
+      "-json",
+      "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "ext:exe;lnk",
+      "regex:[一-龥]"
+    ]);
     expect(response).toMatchObject({
       canLoadMore: true,
       nextOffset: 60,
@@ -191,16 +240,56 @@ describe("searchEverything", () => {
     expect(response.results.map((item) => item.path)).toContain("D:\\file-0.txt");
   });
 
+  it("retries with legacy text output args when ES does not support JSON switches", async () => {
+    const execFile = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Error 6: Unknown switch."))
+      .mockResolvedValueOnce({ stdout: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk\r\n", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "D:\\Documents\\微信.txt\r\n", stderr: "" })
+      .mockRejectedValueOnce(new Error("Error 6: Unknown switch."))
+      .mockResolvedValueOnce({ stdout: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk\r\n", stderr: "" });
+
+    const response = await searchEverything("weixin", { execFile, env: env() });
+
+    expect(execFile).toHaveBeenNthCalledWith(1, ES_EXE, [
+      "-n",
+      "40",
+      "-json",
+      "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "ext:exe;lnk",
+      "<weixin|微信>"
+    ]);
+    expect(execFile).toHaveBeenNthCalledWith(2, ES_EXE, ["-n", "40", "ext:exe;lnk", "<weixin|微信>"]);
+    expect(execFile).toHaveBeenNthCalledWith(4, ES_EXE, [
+      "-n",
+      "120",
+      "-json",
+      "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "ext:exe;lnk",
+      "regex:[一-龥]"
+    ]);
+    expect(execFile).toHaveBeenNthCalledWith(5, ES_EXE, ["-n", "120", "ext:exe;lnk", "regex:[一-龥]"]);
+    expect(response.results.map((item) => item.path)).toContain("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk");
+  });
+
   it("loads the next default page with an ES offset and no app candidate query", async () => {
     const execFile = vi.fn().mockResolvedValue({
       stdout: Array.from({ length: 60 }, (_, index) => `D:\\more-${index}.txt`).join("\r\n"),
       stderr: ""
     });
 
-    const response = await loadMoreEverything("qq", 60, { execFile });
+    const response = await loadMoreEverything("qq", 60, { execFile, env: env() });
 
     expect(execFile).toHaveBeenCalledOnce();
-    expect(execFile).toHaveBeenCalledWith("D:\\Everything\\es.exe", [
+    expect(execFile).toHaveBeenCalledWith(ES_EXE, [
       "-n",
       "60",
       "-offset",
@@ -224,9 +313,10 @@ describe("searchEverything", () => {
     const execFile = vi
       .fn()
       .mockResolvedValueOnce({ stdout: "", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "D:\\only-one.txt\r\n", stderr: "" });
+      .mockResolvedValueOnce({ stdout: "D:\\only-one.txt\r\n", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" });
 
-    const response = await searchEverything("qq", { execFile });
+    const response = await searchEverything("qq", { execFile, env: env() });
 
     expect(response.canLoadMore).toBe(false);
     expect(response.nextOffset).toBeUndefined();
@@ -236,10 +326,10 @@ describe("searchEverything", () => {
     const execFile = vi.fn().mockResolvedValue({ stdout: "", stderr: "" });
     const startEverything = vi.fn();
 
-    await searchEverything("folder: qq", { execFile, startEverything });
-    await searchEverything("doc: 毕业", { execFile, startEverything });
+    await searchEverything("folder: qq", { execFile, startEverything, env: env() });
+    await searchEverything("doc: 毕业", { execFile, startEverything, env: env() });
 
-    expect(execFile).toHaveBeenNthCalledWith(1, "D:\\Everything\\es.exe", [
+    expect(execFile).toHaveBeenNthCalledWith(1, ES_EXE, [
       "-n",
       "200",
       "-json",
@@ -251,7 +341,7 @@ describe("searchEverything", () => {
       "/ad",
       "qq"
     ]);
-    expect(execFile).toHaveBeenNthCalledWith(2, "D:\\Everything\\es.exe", [
+    expect(execFile).toHaveBeenNthCalledWith(2, ES_EXE, [
       "-n",
       "200",
       "-json",
@@ -265,7 +355,7 @@ describe("searchEverything", () => {
     ]);
   });
 
-  it("runs an additional Chinese candidate search for pinyin-like queries", async () => {
+  it("runs an additional Chinese application candidate search for launcher-like pinyin queries", async () => {
     const execFile = vi
       .fn()
       .mockResolvedValueOnce({ stdout: "D:\\Images\\weixin.png\r\n", stderr: "" })
@@ -278,16 +368,78 @@ describe("searchEverything", () => {
       });
     const startEverything = vi.fn();
 
-    const response = await searchEverything("weixin", { execFile, startEverything });
+    const response = await searchEverything("weixin", { execFile, startEverything, env: env() });
 
-    expect(execFile).toHaveBeenNthCalledWith(3, "D:\\Everything\\es.exe", [
+    expect(execFile).toHaveBeenNthCalledWith(3, ES_EXE, [
       "-n",
-      "300",
+      "120",
       "-json",
       "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "ext:exe;lnk",
       "regex:[一-龥]"
     ]);
     expect(response.results.map((item) => item.path)).toContain(
+      "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk"
+    );
+  });
+
+  it("filters unrelated Chinese application candidates before merging results", async () => {
+    const execFile = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          results: [
+            { name: "微信.lnk", path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs", attributes: 32 },
+            { name: "飞书.lnk", path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs", attributes: 32 },
+            { name: "QQ音乐.lnk", path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\腾讯软件", attributes: 32 }
+          ]
+        }),
+        stderr: ""
+      });
+
+    const response = await searchEverything("qq", { execFile, env: env() });
+
+    expect(response.results.map((item) => item.path)).toEqual([
+      "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\腾讯软件\\QQ音乐.lnk"
+    ]);
+  });
+
+  it("keeps Chinese application candidates matched by pinyin initials and full pinyin", async () => {
+    const execFile = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          results: [{ name: "微信.lnk", path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs", attributes: 32 }]
+        }),
+        stderr: ""
+      });
+
+    const initialsResponse = await searchEverything("wx", { execFile, env: env() });
+    expect(initialsResponse.results.map((item) => item.path)).toContain(
+      "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk"
+    );
+
+    execFile.mockClear();
+    execFile
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          results: [{ name: "微信.lnk", path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs", attributes: 32 }]
+        }),
+        stderr: ""
+      });
+
+    const fullPinyinResponse = await searchEverything("weixin", { execFile, env: env() });
+    expect(fullPinyinResponse.results.map((item) => item.path)).toContain(
       "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk"
     );
   });
@@ -299,10 +451,11 @@ describe("searchEverything", () => {
       .mockResolvedValueOnce({
         stdout: ["D:\\qq\\notes.txt", "D:\\Projects\\my-qq-note.txt", "D:\\Projects\\qq"].join("\r\n"),
         stderr: ""
-      });
+      })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" });
     const startEverything = vi.fn();
 
-    const response = await searchEverything("qq", { execFile, startEverything });
+    const response = await searchEverything("qq", { execFile, startEverything, env: env() });
 
     expect(response.results.map((item) => item.path)).toEqual([
       "D:\\Projects\\qq",
@@ -320,7 +473,7 @@ describe("searchEverything", () => {
     const startEverything = vi.fn();
     const getFileIcon = vi.fn().mockResolvedValue("data:image/png;base64,abc");
 
-    const response = await searchEverything("weixin", { execFile, startEverything, getFileIcon });
+    const response = await searchEverything("weixin", { execFile, startEverything, getFileIcon, env: env() });
 
     expect(getFileIcon).toHaveBeenCalledWith("D:\\Weixin\\Weixin.exe");
     expect(response.results[0]).toMatchObject({
@@ -342,7 +495,7 @@ describe("searchEverything", () => {
     const startEverything = vi.fn();
     const getFileIcon = vi.fn().mockResolvedValue("data:image/png;base64,abc");
 
-    const response = await searchEverything("qq", { execFile, startEverything, getFileIcon });
+    const response = await searchEverything("qq", { execFile, startEverything, getFileIcon, env: env() });
 
     expect(getFileIcon).not.toHaveBeenCalled();
     expect(response.results[0]?.kind).toBe("folder");
@@ -358,7 +511,7 @@ describe("searchEverything", () => {
     const execFile = vi.fn().mockResolvedValue({ stdout, stderr: Buffer.alloc(0) });
     const startEverything = vi.fn();
 
-    const response = await searchEverything("毕业设计", { execFile, startEverything });
+    const response = await searchEverything("毕业设计", { execFile, startEverything, env: env() });
 
     expect(response.results[0]).toMatchObject({
       name: "毕业设计.pdf",
@@ -371,13 +524,15 @@ describe("searchEverything", () => {
       .fn()
       .mockRejectedValueOnce(new Error("Error 8: Everything IPC not found"))
       .mockResolvedValueOnce({ stdout: "", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "D:\\aaaa.txt\r\n", stderr: "" });
+      .mockResolvedValueOnce({ stdout: "D:\\aaaa.txt\r\n", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "", stderr: "" });
     const startEverything = vi.fn().mockResolvedValue(undefined);
 
-    const response = await searchEverything("aaaa", { execFile, startEverything });
+    const response = await searchEverything("aaaa", { execFile, startEverything, env: env() });
 
     expect(startEverything).toHaveBeenCalledOnce();
-    expect(execFile).toHaveBeenCalledTimes(3);
+    expect(startEverything).toHaveBeenCalledWith(EVERYTHING_EXE);
+    expect(execFile).toHaveBeenCalledTimes(4);
     expect(response.results[0]?.name).toBe("aaaa.txt");
   });
 
@@ -385,8 +540,20 @@ describe("searchEverything", () => {
     const execFile = vi.fn().mockRejectedValue(new Error("boom"));
     const startEverything = vi.fn();
 
-    const response = await searchEverything("x", { execFile, startEverything });
+    const response = await searchEverything("x", { execFile, startEverything, env: env() });
 
     expect(response).toEqual({ results: [], error: "Everything 搜索失败：boom" });
+  });
+
+  it("returns a configuration error when EVERYTHING_PATH is missing", async () => {
+    const execFile = vi.fn();
+
+    const response = await searchEverything("qq", { execFile, env: env({ EVERYTHING_PATH: undefined }) });
+
+    expect(execFile).not.toHaveBeenCalled();
+    expect(response).toEqual({
+      results: [],
+      error: "Everything 搜索失败：请设置 EVERYTHING_PATH 环境变量，指向 Everything.exe 和 es.exe 所在目录。"
+    });
   });
 });

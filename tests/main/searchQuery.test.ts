@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildChineseAppCandidateArgs,
   buildChineseCandidateArgs,
   buildEverythingArgs,
   buildEverythingMoreArgs,
   buildEverythingSearches,
   expandSearchTerm,
+  isApplicationPinyinCandidateQuery,
   isPinyinCandidateQuery,
   parseSearchQuery
 } from "../../src/main/searchQuery";
@@ -229,5 +231,28 @@ describe("buildEverythingArgs", () => {
   it("does not run pinyin candidate search for Chinese or path queries", () => {
     expect(isPinyinCandidateQuery(parseSearchQuery("微信"))).toBe(false);
     expect(isPinyinCandidateQuery(parseSearchQuery("D:\\weixin"))).toBe(false);
+  });
+
+  it("builds a bounded Chinese application candidate query for launcher-like input", () => {
+    const query = parseSearchQuery("qqyy");
+
+    expect(isApplicationPinyinCandidateQuery(query)).toBe(true);
+    expect(buildChineseAppCandidateArgs(query, 120)).toEqual([
+      "-n",
+      "120",
+      "-json",
+      "-attributes",
+      "-size",
+      "-dm",
+      "-run-count",
+      "-date-run",
+      "ext:exe;lnk",
+      "regex:[一-龥]"
+    ]);
+  });
+
+  it("does not build Chinese application candidates for file-intent queries", () => {
+    expect(isApplicationPinyinCandidateQuery(parseSearchQuery("file: qqyy"))).toBe(false);
+    expect(isApplicationPinyinCandidateQuery(parseSearchQuery("D:\\qqyy"))).toBe(false);
   });
 });

@@ -204,7 +204,7 @@ describe("App", () => {
     expect(logo).toHaveAttribute("src", "data:image/png;base64,qq-logo");
   });
 
-  it("renders section headers without making them selectable results", async () => {
+  it("renders only frequent and search result section headers without making them selectable results", async () => {
     api.search.mockResolvedValue({
       results: [
         {
@@ -212,7 +212,7 @@ describe("App", () => {
           name: "qq-notes.txt",
           path: "D:\\Recent\\qq-notes.txt",
           directory: "D:\\Recent",
-          section: "history"
+          section: "frequent"
         },
         {
           id: "C:\\Program Files\\Tencent\\QQ\\QQ.exe",
@@ -220,14 +220,14 @@ describe("App", () => {
           path: "C:\\Program Files\\Tencent\\QQ\\QQ.exe",
           directory: "C:\\Program Files\\Tencent\\QQ",
           kind: "app",
-          section: "apps"
+          section: "results"
         },
         {
           id: "D:\\Downloads\\qq.txt",
           name: "qq.txt",
           path: "D:\\Downloads\\qq.txt",
           directory: "D:\\Downloads",
-          section: "files"
+          section: "results"
         }
       ] as Array<Record<string, unknown>>
     });
@@ -237,12 +237,15 @@ describe("App", () => {
       target: { value: "qq" }
     });
 
-    expect(await screen.findByText("常用")).toHaveClass("sectionHeader");
-    expect(screen.getByText("应用")).toHaveClass("sectionHeader");
-    expect(screen.getByText("文件/文件夹")).toHaveClass("sectionHeader");
+    expect(await screen.findByText("常用结果")).toHaveClass("sectionHeader");
+    expect(screen.getByText("搜索结果")).toHaveClass("sectionHeader");
+    expect(screen.queryByText("应用")).not.toBeInTheDocument();
+    expect(screen.queryByText("文件/文件夹")).not.toBeInTheDocument();
+    expect(screen.getAllByText("搜索结果")).toHaveLength(1);
     expect(screen.getAllByRole("option")).toHaveLength(3);
 
     fireEvent.keyDown(window, { key: "ArrowDown" });
+    await waitFor(() => expect(screen.getByRole("option", { selected: true })).toHaveTextContent("QQ.exe"));
     fireEvent.keyDown(window, { key: "Enter" });
 
     expect(api.openPath).toHaveBeenCalledWith("C:\\Program Files\\Tencent\\QQ\\QQ.exe");

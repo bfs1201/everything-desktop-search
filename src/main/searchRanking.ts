@@ -11,6 +11,8 @@ export interface UsageStats {
 export type UsageHistory = Record<string, UsageStats>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const FREQUENT_RESULT_LIMIT = 5;
+const SEARCH_RESULT_LIMIT = 20;
 
 const NOISY_PATH_PENALTIES = [
   { pattern: "\\node_modules\\", penalty: 500 },
@@ -43,14 +45,42 @@ function containsChinese(value: string) {
   return /[\u4e00-\u9fff]/.test(value);
 }
 
+function pinyinTokens(value: string) {
+  const tokens: Array<{ full: string; initial: string }> = [];
+  let latinChunk = "";
+
+  const flushLatin = () => {
+    if (latinChunk) {
+      const normalizedChunk = latinChunk.toLowerCase();
+      tokens.push({ full: normalizedChunk, initial: normalizedChunk });
+      latinChunk = "";
+    }
+  };
+
+  for (const character of value) {
+    if (/[\u4e00-\u9fff]/.test(character)) {
+      flushLatin();
+      const [full = ""] = pinyin(character, { toneType: "none", type: "array" }) as string[];
+      tokens.push({ full: full.toLowerCase(), initial: (full[0] ?? "").toLowerCase() });
+    } else if (/[a-zA-Z0-9]/.test(character)) {
+      latinChunk += character;
+    } else {
+      flushLatin();
+    }
+  }
+
+  flushLatin();
+  return tokens;
+}
+
 function pinyinForms(value: string) {
   if (!containsChinese(value)) {
     return [];
   }
 
-  const syllables = pinyin(value, { toneType: "none", type: "array" }) as string[];
-  const full = syllables.join("").toLowerCase();
-  const initials = syllables.map((item) => item[0] ?? "").join("").toLowerCase();
+  const tokens = pinyinTokens(value);
+  const full = tokens.map((item) => item.full).join("");
+  const initials = tokens.map((item) => item.initial).join("");
   return [full, initials].filter(Boolean);
 }
 
@@ -69,12 +99,11 @@ function scorePinyinName(result: SearchResult, keyword: string) {
   return forms.some((form) => form.includes(normalizedKeyword)) ? 520 : 0;
 }
 
-function scoreKeyword(result: SearchResult, keyword: string) {
+function scoreNameKeyword(result: SearchResult, keyword: string) {
   const normalizedName = normalize(result.name);
   const normalizedStem = normalize(nameWithoutExtension(result.name));
-  const normalizedPath = normalize(result.path);
 
-  const textScore = Math.max(
+  return Math.max(
     ...expandSearchTerm(keyword).map((term) => {
       const normalizedKeyword = normalize(term);
 
@@ -90,12 +119,16 @@ function scoreKeyword(result: SearchResult, keyword: string) {
         return 600;
       }
 
-      if (normalizedPath.includes(normalizedKeyword)) {
-        return 300;
-      }
-
       return 0;
     })
+  );
+}
+
+function scoreKeyword(result: SearchResult, keyword: string) {
+  const normalizedPath = normalize(result.path);
+  const textScore = Math.max(
+    scoreNameKeyword(result, keyword),
+    ...expandSearchTerm(keyword).map((term) => (normalizedPath.includes(normalize(term)) ? 300 : 0))
   );
 
   return Math.max(textScore, scorePinyinName(result, keyword));
@@ -222,28 +255,23 @@ function isFileSearchIntent(query: ParsedSearchQuery) {
   return query.mode === "files" || Boolean(query.filter) || query.pathTerms.length > 0;
 }
 
-function defaultSearchSection(result: SearchResult, usageHistory: UsageHistory): SearchResult["section"] {
-  if (usageHistory[result.path]) {
-    return "history";
-  }
-
-  if (inferredKind(result) === "app") {
-    return "apps";
-  }
-
-  return "files";
+export function searchResultMatchesQuery(result: SearchResult, query: ParsedSearchQuery) {
+  const keywordMatches = query.keywords.every((keyword) => scoreKeyword(result, keyword) > 0);
+  const pathMatches = query.pathTerms.every((pathTerm) => normalize(result.path).includes(normalize(pathTerm)));
+  return keywordMatches && pathMatches;
 }
 
-function sectionRank(section: SearchResult["section"]) {
-  if (section === "history") {
-    return 0;
+export function searchResultMatchesChineseAppCandidate(result: SearchResult, query: ParsedSearchQuery) {
+  if (query.keywords.length !== 1) {
+    return false;
   }
 
-  if (section === "apps") {
-    return 1;
+  const keyword = query.keywords[0];
+  if (!keyword) {
+    return false;
   }
 
-  return 2;
+  return scoreNameKeyword(result, keyword) > 0 || scorePinyinName(result, keyword) > 0;
 }
 
 export function rankSearchResults(
@@ -253,46 +281,53 @@ export function rankSearchResults(
   now = Date.now()
 ) {
   const fileSearchIntent = isFileSearchIntent(query);
-
-  return results
-    .map((result) => ({
-      ...result,
-      kind: inferredKind(result),
-      section: fileSearchIntent ? undefined : defaultSearchSection(result, usageHistory)
-    }))
-    .sort((left, right) => {
-      if (query.mode === "recent") {
-        const dateRunDiff = (right.dateRun ?? 0) - (left.dateRun ?? 0);
-        if (dateRunDiff !== 0) {
-          return dateRunDiff;
-        }
+  const compareResults = (left: SearchResult, right: SearchResult) => {
+    if (query.mode === "recent") {
+      const dateRunDiff = (right.dateRun ?? 0) - (left.dateRun ?? 0);
+      if (dateRunDiff !== 0) {
+        return dateRunDiff;
       }
+    }
 
-      if (fileSearchIntent) {
-        const sizeDiff = sortableSize(right) - sortableSize(left);
-        if (sizeDiff !== 0) {
-          return sizeDiff;
-        }
-      } else {
-        const rankDiff = sectionRank(left.section) - sectionRank(right.section);
-        if (rankDiff !== 0) {
-          return rankDiff;
-        }
-      }
-
-      const leftScore = scoreSearchResult(left, query, usageHistory, now);
-      const rightScore = scoreSearchResult(right, query, usageHistory, now);
-      const scoreDiff = rightScore - leftScore;
-
-      if (scoreDiff !== 0) {
-        return scoreDiff;
-      }
-
+    if (fileSearchIntent) {
       const sizeDiff = sortableSize(right) - sortableSize(left);
       if (sizeDiff !== 0) {
         return sizeDiff;
       }
+    }
 
-      return left.path.localeCompare(right.path, "zh-Hans");
-    });
+    const leftScore = scoreSearchResult(left, query, usageHistory, now);
+    const rightScore = scoreSearchResult(right, query, usageHistory, now);
+    const scoreDiff = rightScore - leftScore;
+
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+
+    const sizeDiff = sortableSize(right) - sortableSize(left);
+    if (sizeDiff !== 0) {
+      return sizeDiff;
+    }
+
+    return left.path.localeCompare(right.path, "zh-Hans");
+  };
+
+  const ranked = results
+    .map((result): SearchResult => ({
+      ...result,
+      kind: inferredKind(result)
+    }))
+    .sort(compareResults);
+
+  const frequentResults = ranked
+    .filter((result) => usageHistory[result.path] && searchResultMatchesQuery(result, query))
+    .slice(0, FREQUENT_RESULT_LIMIT)
+    .map((result): SearchResult => ({ ...result, section: "frequent" }));
+  const frequentPaths = new Set(frequentResults.map((result) => result.path.toLowerCase()));
+  const ordinaryResults = ranked
+    .filter((result) => !frequentPaths.has(result.path.toLowerCase()))
+    .slice(0, SEARCH_RESULT_LIMIT)
+    .map((result): SearchResult => ({ ...result, section: "results" }));
+
+  return [...frequentResults, ...ordinaryResults];
 }

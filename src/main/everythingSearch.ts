@@ -3,33 +3,34 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { SearchResponse, SearchResult } from "../shared/searchTypes.js";
 import {
-  buildChineseCandidateArgs,
+  buildChineseAppCandidateArgs,
   buildEverythingMoreArgs,
   buildEverythingSearches,
-  isPinyinCandidateQuery,
+  isApplicationPinyinCandidateQuery,
   parseSearchQuery
 } from "./searchQuery.js";
-import { rankSearchResults, type UsageHistory } from "./searchRanking.js";
+import { rankSearchResults, searchResultMatchesChineseAppCandidate, type UsageHistory } from "./searchRanking.js";
 
 const execFilePromise = promisify(execFileCallback);
-const ES_PATH = "D:\\Everything\\es.exe";
-const EVERYTHING_PATH = "D:\\Everything\\Everything.exe";
 
 type ProcessOutput = string | Buffer;
 type ExecFile = (file: string, args: string[]) => Promise<{ stdout: ProcessOutput; stderr: ProcessOutput }>;
-type StartEverything = () => Promise<void>;
+type StartEverything = (everythingPath: string) => Promise<void>;
 type LoadUsageHistory = () => Promise<UsageHistory>;
 type GetFileIcon = (filePath: string) => Promise<string | undefined>;
 type SearchResultKind = NonNullable<SearchResult["kind"]>;
+type Environment = Record<string, string | undefined>;
 
 const DIRECTORY_ATTRIBUTE = 16;
 const DEFAULT_PAGE_LIMIT = 60;
+const MODERN_OUTPUT_ARGS = new Set(["-json", "-attributes", "-size", "-dm", "-run-count", "-date-run"]);
 
 interface SearchDeps {
   execFile?: ExecFile;
   startEverything?: StartEverything;
   loadUsageHistory?: LoadUsageHistory;
   getFileIcon?: GetFileIcon;
+  env?: Environment;
 }
 
 interface EverythingJsonResult {
@@ -185,7 +186,11 @@ export function decodeEverythingOutput(output: ProcessOutput): string {
     return output;
   }
 
-  return new TextDecoder("gb18030").decode(output);
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(output);
+  } catch {
+    return new TextDecoder("gb18030").decode(output);
+  }
 }
 
 async function defaultExecFile(file: string, args: string[]) {
@@ -197,8 +202,24 @@ async function defaultExecFile(file: string, args: string[]) {
   return { stdout, stderr };
 }
 
-async function defaultStartEverything() {
-  const child = spawn(EVERYTHING_PATH, [], {
+export function resolveEverythingPaths(env: Environment = process.env) {
+  const everythingDirectory = env.EVERYTHING_PATH?.trim();
+  if (!everythingDirectory) {
+    throw new Error("请设置 EVERYTHING_PATH 环境变量，指向 Everything.exe 和 es.exe 所在目录。");
+  }
+
+  if (path.win32.basename(everythingDirectory).toLowerCase() === "everything.exe") {
+    throw new Error("EVERYTHING_PATH 必须是 Everything.exe 和 es.exe 所在目录，而不是 Everything.exe 文件路径。");
+  }
+
+  return {
+    everythingPath: path.win32.join(everythingDirectory, "Everything.exe"),
+    esPath: path.win32.join(everythingDirectory, "es.exe")
+  };
+}
+
+async function defaultStartEverything(everythingPath: string) {
+  const child = spawn(everythingPath, [], {
     detached: true,
     stdio: "ignore",
     windowsHide: true
@@ -213,6 +234,30 @@ function messageFromError(error: unknown): string {
 
 function isEverythingIpcError(error: unknown): boolean {
   return messageFromError(error).includes("Everything IPC not found");
+}
+
+function isUnknownSwitchError(error: unknown): boolean {
+  return messageFromError(error).includes("Unknown switch");
+}
+
+function legacyOutputArgs(args: string[]) {
+  return args.filter((arg) => !MODERN_OUTPUT_ARGS.has(arg));
+}
+
+function shouldRetryWithLegacyOutputArgs(error: unknown, args: string[]) {
+  return isUnknownSwitchError(error) && args.some((arg) => MODERN_OUTPUT_ARGS.has(arg));
+}
+
+async function execEverything(execFile: ExecFile, esPath: string, args: string[]) {
+  try {
+    return await execFile(esPath, args);
+  } catch (error) {
+    if (shouldRetryWithLegacyOutputArgs(error, args)) {
+      return execFile(esPath, legacyOutputArgs(args));
+    }
+
+    throw error;
+  }
 }
 
 async function withIcons(results: SearchResult[], getFileIcon?: GetFileIcon): Promise<SearchResult[]> {
@@ -268,6 +313,11 @@ function responsePaging(
   };
 }
 
+function lastOutputResultCount(outputs: ProcessOutput[]) {
+  const lastOutput = outputs.at(-1);
+  return lastOutput ? parseEverythingOutput(decodeEverythingOutput(lastOutput)).length : 0;
+}
+
 export async function searchEverything(query: string, deps: SearchDeps = {}): Promise<SearchResponse> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -276,14 +326,27 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
 
   const execFile = deps.execFile ?? defaultExecFile;
   const startEverything = deps.startEverything ?? defaultStartEverything;
+  let everythingPaths: ReturnType<typeof resolveEverythingPaths>;
+  try {
+    everythingPaths = resolveEverythingPaths(deps.env);
+  } catch (error) {
+    return { results: [], error: `Everything 搜索失败：${messageFromError(error)}` };
+  }
   const parsedQuery = parseSearchQuery(trimmed);
   const searchArgs = buildEverythingSearches(parsedQuery);
-  const candidateArgs = isPinyinCandidateQuery(parsedQuery) ? buildChineseCandidateArgs(parsedQuery, 300) : undefined;
-  const getRankedResults = async (outputs: ProcessOutput[]) => {
+  const appCandidateArgs = isApplicationPinyinCandidateQuery(parsedQuery) ? buildChineseAppCandidateArgs(parsedQuery) : undefined;
+  const getRankedResults = async (outputs: ProcessOutput[], appCandidateOutput?: ProcessOutput) => {
     const usageHistory = deps.loadUsageHistory ? await deps.loadUsageHistory() : {};
+    const regularResults = outputs.flatMap((stdout) => parseEverythingOutput(decodeEverythingOutput(stdout)));
+    const appCandidateResults = appCandidateOutput
+      ? parseEverythingOutput(decodeEverythingOutput(appCandidateOutput)).filter((result) =>
+          searchResultMatchesChineseAppCandidate(result, parsedQuery)
+        )
+      : [];
+
     return withIcons(
       rankSearchResults(
-        mergeResults(outputs.flatMap((stdout) => parseEverythingOutput(decodeEverythingOutput(stdout)))),
+        mergeResults([...regularResults, ...appCandidateResults]),
         parsedQuery,
         usageHistory
       ),
@@ -294,31 +357,34 @@ export async function searchEverything(query: string, deps: SearchDeps = {}): Pr
     const outputs: ProcessOutput[] = [];
 
     for (const args of searchArgs) {
-      const { stdout } = await execFile(ES_PATH, args);
+      const { stdout } = await execEverything(execFile, everythingPaths.esPath, args);
       outputs.push(stdout);
     }
 
-    if (candidateArgs) {
+    let appCandidateOutput: ProcessOutput | undefined;
+    if (appCandidateArgs) {
       try {
-        const candidateResponse = await execFile(ES_PATH, candidateArgs);
-        outputs.push(candidateResponse.stdout);
+        const appCandidateResponse = await execEverything(execFile, everythingPaths.esPath, appCandidateArgs);
+        appCandidateOutput = appCandidateResponse.stdout;
       } catch {
-        // 拼音候选是增强召回；失败时保留 Everything 的常规结果。
+        // 应用拼音候选是增强召回；失败时保留 Everything 的常规结果。
       }
     }
 
-    return outputs;
+    return { outputs, appCandidateOutput };
   };
 
   try {
-    const results = await getRankedResults(await runSearches());
-    return { results, ...responsePaging(parsedQuery.mode, results.length) };
+    const { outputs, appCandidateOutput } = await runSearches();
+    const results = await getRankedResults(outputs, appCandidateOutput);
+    return { results, ...responsePaging(parsedQuery.mode, lastOutputResultCount(outputs)) };
   } catch (firstError) {
     if (isEverythingIpcError(firstError)) {
       try {
-        await startEverything();
-        const results = await getRankedResults(await runSearches());
-        return { results, ...responsePaging(parsedQuery.mode, results.length) };
+        await startEverything(everythingPaths.everythingPath);
+        const { outputs, appCandidateOutput } = await runSearches();
+        const results = await getRankedResults(outputs, appCandidateOutput);
+        return { results, ...responsePaging(parsedQuery.mode, lastOutputResultCount(outputs)) };
       } catch (retryError) {
         return { results: [], error: `Everything 搜索失败：${messageFromError(retryError)}` };
       }
@@ -341,11 +407,18 @@ export async function loadMoreEverything(query: string, offset: number, deps: Se
   }
 
   const execFile = deps.execFile ?? defaultExecFile;
-  const { stdout } = await execFile(ES_PATH, args);
+  let everythingPaths: ReturnType<typeof resolveEverythingPaths>;
+  try {
+    everythingPaths = resolveEverythingPaths(deps.env);
+  } catch (error) {
+    return { results: [], error: `Everything 搜索失败：${messageFromError(error)}` };
+  }
+  const { stdout } = await execEverything(execFile, everythingPaths.esPath, args);
   const usageHistory = deps.loadUsageHistory ? await deps.loadUsageHistory() : {};
+  const rawResults = parseEverythingOutput(decodeEverythingOutput(stdout));
   const results = await withIcons(
-    rankSearchResults(parseEverythingOutput(decodeEverythingOutput(stdout)), parsedQuery, usageHistory),
+    rankSearchResults(rawResults, parsedQuery, usageHistory),
     deps.getFileIcon
   );
-  return { results, ...responsePaging(parsedQuery.mode, results.length, offset) };
+  return { results, ...responsePaging(parsedQuery.mode, rawResults.length, offset) };
 }

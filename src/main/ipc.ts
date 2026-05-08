@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
 import { loadMoreEverything, searchEverything } from "./everythingSearch.js";
 import { createFileActions } from "./fileActions.js";
+import { createFileIconResolver } from "./fileIcons.js";
 import { getUsageHistoryPath, loadUsageHistory, recordOpenedPath } from "./usageHistory.js";
 import { restorePreviousForegroundWindow } from "./windowFocus.js";
 
@@ -11,6 +12,14 @@ const fileActions = createFileActions({
   showItemInFolder: shell.showItemInFolder,
   writeText: clipboard.writeText,
   recordOpenedPath: (filePath) => recordOpenedPath(filePath, historyPath)
+});
+
+const getFileIcon = createFileIconResolver({
+  getFileIcon: async (filePath) => {
+    const icon = await app.getFileIcon(filePath, { size: "normal" });
+    return icon.toDataURL();
+  },
+  readShortcutLink: shell.readShortcutLink
 });
 
 async function hideLauncherWindow(window: BrowserWindow) {
@@ -24,19 +33,13 @@ export function registerIpc() {
   ipcMain.handle("search", (_event, query: string) =>
     searchEverything(query, {
       loadUsageHistory: () => loadUsageHistory(historyPath),
-      getFileIcon: async (filePath) => {
-        const icon = await app.getFileIcon(filePath, { size: "normal" });
-        return icon.toDataURL();
-      }
+      getFileIcon
     })
   );
   ipcMain.handle("load-more", (_event, query: string, offset: number) =>
     loadMoreEverything(query, offset, {
       loadUsageHistory: () => loadUsageHistory(historyPath),
-      getFileIcon: async (filePath) => {
-        const icon = await app.getFileIcon(filePath, { size: "normal" });
-        return icon.toDataURL();
-      }
+      getFileIcon
     })
   );
   ipcMain.handle("open-path", async (_event, filePath: string) => fileActions.open(filePath));

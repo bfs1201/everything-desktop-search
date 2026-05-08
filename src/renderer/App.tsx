@@ -4,9 +4,8 @@ import "./styles.css";
 
 const PAGE_SIZE = 8;
 const SECTION_LABELS: Record<NonNullable<SearchResult["section"]>, string> = {
-  history: "常用",
-  apps: "应用",
-  files: "文件/文件夹"
+  frequent: "常用结果",
+  results: "搜索结果"
 };
 
 function useDebouncedValue(value: string, delayMs: number) {

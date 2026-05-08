@@ -8,18 +8,18 @@
 flowchart LR
   A["双击 Ctrl"] --> B["显示搜索浮窗"]
   B --> C["输入关键词或过滤器"]
-  C --> D["应用优先搜索"]
-  C --> E["文件/文件夹搜索"]
+  C --> D["应用候选搜索"]
+  C --> E["文件和文件夹搜索"]
   D --> F["解析 Everything 元数据"]
   E --> F
-  F --> G["按常用、应用、文件分组排序"]
+  F --> G["按常用结果和搜索结果分组"]
   G --> H{"用户操作"}
   H --> I["Enter 打开"]
   H --> J["Alt+Enter 定位"]
   H --> K["Ctrl+C 复制路径"]
 ```
 
-- 使用 `D:\Everything\es.exe` 获取本机文件、文件夹和应用结果。
+- 使用 `EVERYTHING_PATH` 目录下的 `es.exe` 获取本机文件、文件夹和应用结果。
 - 默认查询会先搜索 `exe`、`lnk` 应用候选，再搜索更广泛的文件和文件夹结果。
 - 支持 `folder:`、`file:`、`doc:`、`pic:`、`video:`、`audio:` 类型过滤。
 - 支持 `app:`、`recent:`、`path:`、`parent:` 等模式化查询。
@@ -27,8 +27,9 @@ flowchart LR
 - 支持路径约束，例如 `desktop\毕业` 会把路径和关键词拆开搜索。
 - 支持中文名称的拼音和首字母排序增强，例如 `weixin`、`wx` 可命中中文应用名。
 - 记录成功打开过的路径，让常用结果在后续搜索中更靠前。
-- 读取 Everything 的运行次数和最近运行时间，让应用与最近使用结果排序更贴近日常使用习惯。
-- Everything IPC 未运行时会尝试启动 `D:\Everything\Everything.exe` 后重试。
+- 读取 Everything 的运行次数和最近运行时间，让常用结果与搜索结果排序更贴近日常使用习惯。
+- 默认只展示两组：`常用结果` 最多 5 条，`搜索结果` 最多 20 条。
+- Everything IPC 未运行时会尝试启动 `EVERYTHING_PATH` 目录下的 `Everything.exe` 后重试。
 
 ## 使用方式
 
@@ -68,10 +69,16 @@ flowchart LR
 
 - Windows
 - Node.js 和 npm
-- Everything 已安装在 `D:\Everything`
-- Everything CLI 可执行文件位于 `D:\Everything\es.exe`
+- Everything 已安装，并且 `Everything.exe` 与 `es.exe` 位于同一目录
+- 已设置 `EVERYTHING_PATH` 环境变量，值为 `Everything.exe` 和 `es.exe` 所在目录
 
-> 当前代码中的 Everything 路径是固定值。如果你的 Everything 安装在其他目录，需要先调整 `src/main/everythingSearch.ts` 中的 `ES_PATH` 和 `EVERYTHING_PATH`。
+示例：
+
+```powershell
+[Environment]::SetEnvironmentVariable("EVERYTHING_PATH", "C:\Program Files\Everything", "User")
+```
+
+设置后需要重启终端或重新启动应用，让新环境变量生效。`EVERYTHING_PATH` 必须是目录路径，不要写成 `C:\Program Files\Everything\Everything.exe`。
 
 ## 开发
 
@@ -117,9 +124,9 @@ graph TD
   D --> G["结果排序"]
   D --> H["使用历史"]
   D --> I["Everything 运行元数据"]
-  D --> N["D:\\Everything\\es.exe"]
+  D --> N["EVERYTHING_PATH\\es.exe"]
   J["React 渲染进程"] --> K["搜索输入"]
-  J --> L["常用/应用/文件分组列表"]
+  J --> L["常用结果和搜索结果列表"]
   J --> M["键盘操作"]
   J --> C
 ```
@@ -155,10 +162,10 @@ sequenceDiagram
   S->>E: 执行文件/文件夹搜索
   E-->>S: 返回 JSON、attributes、size、date-run 等结果
   S->>H: 读取历史
-  S->>S: 合并、识别类型、分组、排序
+  S->>S: 过滤噪音候选并分组排序
   S-->>I: SearchResponse
   I-->>R: 搜索结果
-  R-->>U: 按常用、应用、文件/文件夹分组展示
+  R-->>U: 按常用结果和搜索结果展示
 ```
 
 ## 测试重点
@@ -167,7 +174,7 @@ sequenceDiagram
 - Everything 输出解析、GB18030 解码、JSON attributes 类型判断和运行元数据读取。
 - 查询过滤器、路径约束、父目录约束、排除词和扩展名过滤参数。
 - 默认应用候选搜索、应用专搜、最近运行搜索和文件模式搜索。
-- 拼音候选召回、拼音排序、常用/应用/文件分组排序。
+- 拼音候选召回、拼音排序、常用结果/搜索结果分组排序。
 - 打开成功后的使用历史记录。
 - 分组标题渲染、`Alt+数字` 快速打开和 `Ctrl+9` 展示更多。
 - Vite、Electron preload、窗口行为等配置。

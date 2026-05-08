@@ -15,7 +15,7 @@ function result(filePath: string, overrides: Partial<SearchResult> = {}): Search
 }
 
 function sectionOf(item: SearchResult) {
-  return (item as SearchResult & { section?: "history" | "apps" | "files" }).section;
+  return (item as SearchResult & { section?: "frequent" | "results" }).section;
 }
 
 describe("rankSearchResults", () => {
@@ -69,12 +69,12 @@ describe("rankSearchResults", () => {
     );
 
     expect(ranked.map((item) => ({ path: item.path, section: sectionOf(item) }))).toEqual([
-      { path: historyPath, section: "history" },
-      { path: "D:\\Downloads\\qq.iso", section: "files" }
+      { path: historyPath, section: "frequent" },
+      { path: "D:\\Downloads\\qq.iso", section: "results" }
     ]);
   });
 
-  it("puts previously opened results before apps and ordinary files in default searches", () => {
+  it("puts previously opened matching results before ordinary search results", () => {
     const historyPath = "D:\\Projects\\qq-notes.txt";
     const exePath = "D:\\Tools\\QQ\\QQ.exe";
     const ranked = rankSearchResults(
@@ -94,9 +94,9 @@ describe("rankSearchResults", () => {
     );
 
     expect(ranked.map((item) => ({ path: item.path, section: sectionOf(item) }))).toEqual([
-      { path: historyPath, section: "history" },
-      { path: exePath, section: "apps" },
-      { path: "D:\\Downloads\\qq.iso", section: "files" }
+      { path: historyPath, section: "frequent" },
+      { path: exePath, section: "results" },
+      { path: "D:\\Downloads\\qq.iso", section: "results" }
     ]);
   });
 
@@ -115,7 +115,7 @@ describe("rankSearchResults", () => {
     expect(ranked.map((item) => item.path)).toEqual(["D:\\Tools\\QQBeta\\QQBeta.exe", "D:\\Tools\\QQ\\QQ.exe"]);
   });
 
-  it("labels default search results by apps and files sections", () => {
+  it("labels default search results with the unified results section", () => {
     const ranked = rankSearchResults(
       [
         result("D:\\Downloads\\qq.txt"),
@@ -125,8 +125,8 @@ describe("rankSearchResults", () => {
     );
 
     expect(ranked.map((item) => ({ path: item.path, section: sectionOf(item) }))).toEqual([
-      { path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\QQ.lnk", section: "apps" },
-      { path: "D:\\Downloads\\qq.txt", section: "files" }
+      { path: "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\QQ.lnk", section: "results" },
+      { path: "D:\\Downloads\\qq.txt", section: "results" }
     ]);
   });
 
@@ -145,7 +145,7 @@ describe("rankSearchResults", () => {
       "D:\\medium-qq.txt",
       "D:\\a-small-qq.txt"
     ]);
-    expect(ranked.map(sectionOf)).toEqual([undefined, undefined, undefined]);
+    expect(ranked.map(sectionOf)).toEqual(["results", "results", "results"]);
   });
 
   it("sorts path-constrained results from largest to smallest", () => {
@@ -205,6 +205,30 @@ describe("rankSearchResults", () => {
     );
 
     expect(ranked[0]?.path).toBe("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\微信.lnk");
+  });
+
+  it("scores mixed Latin and Chinese application names through pinyin initials", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Documents\\qqyy-notes.txt"),
+        result("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\腾讯软件\\QQ音乐.lnk")
+      ],
+      parseSearchQuery("qqyy")
+    );
+
+    expect(ranked[0]?.path).toBe("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\腾讯软件\\QQ音乐.lnk");
+  });
+
+  it("scores mixed Latin and Chinese application names through full pinyin", () => {
+    const ranked = rankSearchResults(
+      [
+        result("D:\\Documents\\qqyinyue.txt"),
+        result("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\腾讯软件\\QQ音乐.lnk")
+      ],
+      parseSearchQuery("qqyinyue")
+    );
+
+    expect(ranked[0]?.path).toBe("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\腾讯软件\\QQ音乐.lnk");
   });
 
   it("prefers exact filename match over prefix, contains, and path-only matches", () => {
@@ -320,5 +344,50 @@ describe("rankSearchResults", () => {
 
     expect(ranked.at(-1)?.path).toBe("D:\\repo\\node_modules\\qq.txt");
     expect(ranked[0]?.path).toBe("C:\\Users\\bfs\\Desktop\\qq.txt");
+  });
+
+  it("limits frequent results to five and ordinary search results to twenty", () => {
+    const frequentPaths = Array.from({ length: 7 }, (_, index) => `D:\\Frequent\\qq-${index}.txt`);
+    const ordinaryPaths = Array.from({ length: 25 }, (_, index) => `D:\\Ordinary\\qq-${index}.txt`);
+    const usageHistory = Object.fromEntries(
+      frequentPaths.map((filePath, index) => [
+        filePath,
+        {
+          openCount: 10 - index,
+          lastOpenedAt: Date.parse("2026-05-03T10:00:00.000Z") - index
+        }
+      ])
+    );
+
+    const ranked = rankSearchResults(
+      [...frequentPaths, ...ordinaryPaths].map((filePath) => result(filePath)),
+      parseSearchQuery("qq"),
+      usageHistory,
+      Date.parse("2026-05-03T10:30:00.000Z")
+    );
+
+    expect(ranked.filter((item) => sectionOf(item) === "frequent")).toHaveLength(5);
+    expect(ranked.filter((item) => sectionOf(item) === "results")).toHaveLength(20);
+    expect(new Set(ranked.map((item) => item.path)).size).toBe(25);
+  });
+
+  it("does not put non-matching history entries into frequent results", () => {
+    const unrelatedPath = "D:\\Documents\\weixin.txt";
+    const ranked = rankSearchResults(
+      [result(unrelatedPath), result("D:\\Documents\\qq.txt")],
+      parseSearchQuery("qq"),
+      {
+        [unrelatedPath]: {
+          openCount: 10,
+          lastOpenedAt: Date.parse("2026-05-03T10:00:00.000Z")
+        }
+      },
+      Date.parse("2026-05-03T10:30:00.000Z")
+    );
+
+    expect(ranked.map((item) => ({ path: item.path, section: sectionOf(item) }))).toEqual([
+      { path: "D:\\Documents\\qq.txt", section: "results" },
+      { path: unrelatedPath, section: "results" }
+    ]);
   });
 });

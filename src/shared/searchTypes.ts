@@ -5,7 +5,7 @@ export interface SearchResult {
   directory: string;
   size?: number;
   kind?: "app" | "folder" | "file";
-  section?: "history" | "apps" | "files";
+  section?: "frequent" | "results";
   runCount?: number;
   dateRun?: number;
   dateModified?: number;

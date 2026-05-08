@@ -17,8 +17,12 @@ export interface ParsedSearchQuery {
 const FILTERS = new Set(["folder", "file", "doc", "pic", "video", "audio"]);
 
 const PINYIN_ALIASES: Record<string, string[]> = {
+  wx: ["微信"],
   weixin: ["微信"],
-  wechat: ["微信"]
+  qqyy: ["QQ音乐"],
+  qqyinyue: ["QQ音乐"],
+  idea: ["idea64.exe"]
+  // TODO在此添加常用但搜索不利的应用
 };
 
 const EXTENSION_FILTERS: Record<Exclude<SearchFilter, "folder" | "file" | undefined>, string> = {
@@ -210,10 +214,30 @@ export function isPinyinCandidateQuery(query: ParsedSearchQuery): boolean {
   return new Set(keyword.toLowerCase()).size > 1;
 }
 
+export function isApplicationPinyinCandidateQuery(query: ParsedSearchQuery): boolean {
+  if (query.mode !== "default" && query.mode !== "apps") {
+    return false;
+  }
+
+  if (query.filter || query.pathTerms.length > 0 || query.pathScope || query.parentScope || query.keywords.length !== 1) {
+    return false;
+  }
+
+  const keyword = query.keywords[0];
+  return Boolean(keyword && /^[a-zA-Z]{2,}$/.test(keyword));
+}
+
 export function buildChineseCandidateArgs(query: ParsedSearchQuery, limit = 300): string[] {
   const args = ["-n", String(limit)];
   appendFilters(args, query);
   args.push("regex:[一-龥]");
+  return args;
+}
+
+export function buildChineseAppCandidateArgs(query: ParsedSearchQuery, limit = 120): string[] {
+  const args = ["-n", String(limit)];
+  appendRankingOutput(args);
+  args.push("ext:exe;lnk", "regex:[一-龥]");
   return args;
 }
 
