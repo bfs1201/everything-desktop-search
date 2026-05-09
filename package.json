@@ -1,6 +1,6 @@
 {
   "name": "everything-desktop-search",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "A keyboard-first Everything quick launcher for Windows.",
   "main": "dist/main/main.js",
@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "npm run build && electron .",
-    "dist": "npm run build && electron-builder --win portable"
+    "dist": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
@@ -38,8 +38,21 @@
     "appId": "local.everything.quicklauncher",
     "productName": "Everything Quick Launcher",
     "icon": "assets/icon.ico",
-    "portable": {
-      "artifactName": "Everything.Quick.Search.1.1.exe"
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Everything Quick Launcher",
+      "artifactName": "Everything.Quick.Search.Setup.1.2.exe"
     },
     "files": [
       "dist/**/*",

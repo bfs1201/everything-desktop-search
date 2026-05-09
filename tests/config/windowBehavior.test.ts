@@ -40,6 +40,40 @@ describe("window behavior", () => {
     expect(packageJson.scripts.start).toBe("npm run build && electron .");
   });
 
+  it("npm run dist 生成 NSIS 安装器而不是 portable 版本", () => {
+    const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf-8")) as {
+      scripts: Record<string, string>;
+      build: {
+        npmRebuild: boolean;
+        win: {
+          target: string[];
+          signAndEditExecutable: boolean;
+        };
+        nsis: {
+          oneClick: boolean;
+          perMachine: boolean;
+          allowToChangeInstallationDirectory: boolean;
+          createDesktopShortcut: boolean;
+          createStartMenuShortcut: boolean;
+        };
+        portable?: unknown;
+      };
+    };
+
+    expect(packageJson.scripts.dist).toBe("npm run build && electron-builder --win nsis");
+    expect(packageJson.build.npmRebuild).toBe(false);
+    expect(packageJson.build.win.target).toContain("nsis");
+    expect(packageJson.build.win.signAndEditExecutable).toBe(false);
+    expect(packageJson.build.nsis).toMatchObject({
+      oneClick: false,
+      perMachine: false,
+      allowToChangeInstallationDirectory: true,
+      createDesktopShortcut: true,
+      createStartMenuShortcut: true
+    });
+    expect(packageJson.build.portable).toBeUndefined();
+  });
+
   it("双击 Ctrl 显示窗口时请求应用、窗口和页面焦点", () => {
     const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
 
@@ -106,6 +140,30 @@ describe("window behavior", () => {
     expect(trayFlow).toContain("app.quit()");
     expect(mainSource).toContain("createTray()");
     expect(packageJson.build.files).toContain("assets/**/*");
+  });
+
+  it("托盘菜单提供默认关闭的开机自启切换", () => {
+    const mainSource = readFileSync(join(process.cwd(), "src/main/main.ts"), "utf-8");
+    const trayFlow = mainSource.slice(
+      mainSource.indexOf("function createTray"),
+      mainSource.indexOf("function keyNameFromCode")
+    );
+    const readyFlow = mainSource.slice(
+      mainSource.indexOf("app.whenReady()"),
+      mainSource.indexOf("app.on(\"window-all-closed\"")
+    );
+
+    expect(mainSource).toContain("getLoginItemSettings");
+    expect(mainSource).toContain("setLoginItemSettings");
+    expect(mainSource).toContain("function isLaunchAtLoginEnabled");
+    expect(mainSource).toContain("function setLaunchAtLoginEnabled");
+    expect(trayFlow).toContain("开机自启");
+    expect(trayFlow).toContain("type: \"checkbox\"");
+    expect(trayFlow).toContain("checked: isLaunchAtLoginEnabled()");
+    expect(trayFlow).toContain("setLaunchAtLoginEnabled(menuItem.checked)");
+    expect(mainSource).toContain("path: process.execPath");
+    expect(readyFlow).not.toContain("setLoginItemSettings");
+    expect(mainSource).not.toContain("openAtLogin: true");
   });
 
   it("双击 Ctrl 显示窗口时使用原生 HWND 强制前台激活", () => {

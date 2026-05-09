@@ -20,6 +20,17 @@ const WINDOW_WIDTH = 720;
 const COMPACT_HEIGHT = 104;
 const EXPANDED_HEIGHT = 560;
 
+function isLaunchAtLoginEnabled(): boolean {
+  return app.getLoginItemSettings().openAtLogin;
+}
+
+function setLaunchAtLoginEnabled(enabled: boolean) {
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    path: process.execPath
+  });
+}
+
 function positionWindow(window: BrowserWindow, expanded = false) {
   const display = screen.getPrimaryDisplay();
   const { width } = display.workAreaSize;
@@ -170,6 +181,14 @@ function createTray() {
     {
       label: "设置",
       enabled: false
+    },
+    {
+      label: "开机自启",
+      type: "checkbox",
+      checked: isLaunchAtLoginEnabled(),
+      click: (menuItem) => {
+        setLaunchAtLoginEnabled(menuItem.checked);
+      }
     },
     { type: "separator" },
     {

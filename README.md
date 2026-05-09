@@ -29,6 +29,7 @@ flowchart LR
 - 记录成功打开过的路径，让常用结果在后续搜索中更靠前。
 - 读取 Everything 的运行次数和最近运行时间，让常用结果与搜索结果排序更贴近日常使用习惯。
 - 默认只展示两组：`常用结果` 最多 5 条，`搜索结果` 最多 20 条。
+- 托盘菜单支持开启或关闭开机自启，首次安装默认不自启。
 - Everything IPC 未运行时会尝试启动 `EVERYTHING_PATH` 目录下的 `Everything.exe` 后重试。
 
 ## 使用方式
@@ -45,6 +46,8 @@ flowchart LR
 | `Ctrl+C` | 复制选中结果路径 |
 | `Alt+1` 到 `Alt+8` | 直接打开当前可见的第 1 到第 8 个结果 |
 | `Ctrl+9` | 展示更多结果 |
+
+托盘菜单提供 `开机自启` 勾选项。默认不勾选；开启后可在 Windows `设置 > 应用 > 启动` 中看到并管理该启动项。
 
 ## 查询语法
 
@@ -106,11 +109,13 @@ npm run build
 npm start
 ```
 
-打包 Windows portable 版本：
+构建 Windows NSIS 安装器：
 
 ```powershell
 npm run dist
 ```
+
+安装器输出到 `release\Everything.Quick.Search.Setup.1.2.exe`。通过该安装器安装后，程序会出现在 Windows 控制面板或 `设置 > 应用 > 已安装的应用` 中，并支持正常卸载。
 
 ## 项目结构
 
